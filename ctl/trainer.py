@@ -124,9 +124,9 @@ class VQVAEMotionTrainer(nn.Module):
 
 		train_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder,max_motion_length = self.args.max_seq_length)
 		valid_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
-		self.render_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
+		self.render_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "test" , max_motion_length = self.args.max_seq_length)
 
-		self.print(f'training with training and valid dataset of {len(train_ds)} and {len(valid_ds)} samples')
+		self.print(f'training with training and valid dataset of {len(train_ds)} and {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
 		# dataloader
 

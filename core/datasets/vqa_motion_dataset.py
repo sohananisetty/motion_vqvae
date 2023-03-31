@@ -23,6 +23,14 @@ class VQMotionDataset(data.Dataset):
             self.max_motion_length = max_motion_length
             self.meta_dir = ''
 
+        if dataset_name == 'aist':
+            self.data_root = data_root
+            self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
+            self.text_dir = pjoin(self.data_root, 'texts')
+            self.joints_num = 22
+            self.max_motion_length = max_motion_length
+            self.meta_dir = ''
+
         elif dataset_name == 'kit':
             self.data_root = data_root
             #'./dataset/KIT-ML'
