@@ -81,7 +81,6 @@ class VQVAEMotionTrainer(nn.Module):
 		kwargs = DistributedDataParallelKwargs(find_unused_parameters = True)
 		self.accelerator = Accelerator(kwargs_handlers = [kwargs], **accelerate_kwargs)
 
-
 		transformers.set_seed(42)
 
 		self.args = args
@@ -90,7 +89,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		if self.is_main:
 			wandb.login()
-			wandb.init(project="vqvae_rvq_128_12e_12d")
+			wandb.init(project="vqvae_vq_768_128")
 
 		self.output_dir = Path(self.training_args.output_dir)
 		self.output_dir.mkdir(parents = True, exist_ok = True)
@@ -124,7 +123,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		train_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder,max_motion_length = self.args.max_seq_length)
 		valid_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
-		self.render_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "test" , max_motion_length = self.args.max_seq_length)
+		self.render_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
 
 		self.print(f'training with training and valid dataset of {len(train_ds)} and {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
@@ -278,6 +277,8 @@ class VQVAEMotionTrainer(nn.Module):
 				wandb.log({f'train_loss/{key}': value})           
 
 		self.print(losses_str)
+
+		
 
 		if self.is_main and (steps % self.evaluate_every == 0):
 			self.validation_step()

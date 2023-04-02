@@ -10,8 +10,9 @@ from tqdm import tqdm
 
 
 class VQMotionDataset(data.Dataset):
-    def __init__(self, dataset_name, data_root, max_motion_length = 196, window_size = 64, split = "train"):
-        self.window_size = window_size
+    def __init__(self, dataset_name, data_root, max_motion_length = 196, min_length_seconds = 2, fps = 20, split = "train"):
+        self.fps = fps
+        self.window_size = self.fps*min_length_seconds
         self.dataset_name = dataset_name
         self.split = split
 

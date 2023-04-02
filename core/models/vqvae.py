@@ -3,7 +3,8 @@ import torch.nn.functional as F
 import torch.nn as nn
 from x_transformers.x_transformers import AttentionLayers, Encoder, Decoder, exists, default, always,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, l2norm
 from vector_quantize_pytorch import ResidualVQ
-
+from einops import rearrange, reduce, pack, unpack
+from core.quantization.core_vq import VectorQuantization
 
 class LinearEmbedding(nn.Module):
 	def __init__(self, input_dim,dim, l2norm_embed = False):
@@ -171,7 +172,8 @@ class MotionDecoder(nn.Module):
 		
 
 	def forward(self, x):
-		"""Get loss for the cross-modal tasks."""
+		"""x: b n c"""
+		
 	   
 		x = self.attn_layers(x)
 		logits = self.to_logit(x)
@@ -185,7 +187,7 @@ class MotionDecoder(nn.Module):
 class VQMotionModel(nn.Module):
 	"""Audio Motion VQGAN model."""
 
-	def __init__(self, is_training = True, device = "cuda"):
+	def __init__(self, args, device = "cuda"):
 		"""Initializer for VQGANModel.
 
 		Args:
@@ -197,37 +199,46 @@ class VQMotionModel(nn.Module):
 
 		self.device = device
 		self.motionEncoder = MotionTransformer(
-			inp_dim = 263,
-			max_seq_len = 600,
+			inp_dim = args.motion_dim,
+			max_seq_len = args.max_seq_length,
 			scaled_sinu_pos_emb = True,
 			attn_layers = Encoder(
-				dim = 128,
-				depth = 12,
-				heads = 8,
+				dim = args.enc_dec_dim,
+				depth = args.depth,
+				heads = args.heads,
 				
 			)
 		)
 				
 		self.motionDecoder = MotionDecoder(
-			dim = 128,
-			logit_dim = 263,
+			dim = args.enc_dec_dim,
+			logit_dim = args.motion_dim,
 			attn_layers = Decoder(
-					dim = 128,
-					depth = 12,
-					heads = 8,
+					dim = args.enc_dec_dim,
+					depth = args.depth,
+					heads = args.heads,
 				)
 			)
 		
-		self.rq = ResidualVQ(
-			dim = 128,
-			num_quantizers = 8,
-			codebook_size = 1024,
+		# self.rq = ResidualVQ(
+		# 	dim = 128,
+		# 	num_quantizers = 8,
+		# 	codebook_size = 1024,
+		# 	decay = 0.95,
+		# 	commitment_weight = 1,
+		# 	kmeans_init = True,
+		# 	threshold_ema_dead_code = 2,
+		# 	quantize_dropout = True,
+		# 	quantize_dropout_cutoff_index = 1
+		# )
+		self.vq = VectorQuantization(
+			dim = args.enc_dec_dim,
+			codebook_dim = args.codebook_dim,
+			codebook_size = args.codebook_size,
 			decay = 0.95,
 			commitment_weight = 1,
 			kmeans_init = True,
 			threshold_ema_dead_code = 2,
-			quantize_dropout = True,
-			quantize_dropout_cutoff_index = 1
 		)
 
 	def forward(self, motion):
@@ -237,44 +248,57 @@ class VQMotionModel(nn.Module):
 
 		Args:
 			inputs: Input dict of tensors. The dict should contains 
-			`motion_input` ([batch_size, motion_seq_length, motion_feature_dimension]) and
-			`audio_input` ([batch_size, audio_seq_length, audio_feature_dimension]).
+			`motion_input` ([batch_size, motion_seq_length, motion_feature_dimension])
 
 		Returns:
 			Final output after the cross modal transformer. A tensor with shape 
-			[batch_size, motion_seq_length + audio_seq_length, motion_feature_dimension]
-			will be return. **Be aware only the first N-frames are supervised during training**
+			[batch_size, motion_seq_length, motion_feature_dimension]
 		"""
 		# Computes motion features.
-		motion_input = motion
+		motion_input = motion #b n d
 		
 		
-		embed_motion_features = self.motionEncoder(motion_input)
+		embed_motion_features = self.motionEncoder(motion_input) #b n d
 
 		##codebook
-		quantized_enc_motion, indices, commit_loss = self.rq(embed_motion_features)
+		quantized_enc_motion, indices, commit_loss = self.vq(embed_motion_features)
+		# b n d , b n q , q
 		
 		## decoder
-		decoded_motion_features = self.motionDecoder(quantized_enc_motion)
-
-		return decoded_motion_features , indices, commit_loss.sum()
-
-
-	def encode(self, motion_input , all_codes = False):
-		motion_input = motion_input
-		embed_motion_features = self.motionEncoder(motion_input)
-		##codebook
-		if all_codes:
-			quantized_enc_motion, indices, commit_loss, all_codes = self.rq(embed_motion_features, return_all_codes = all_codes)
-			return quantized_enc_motion, indices, commit_loss.sum(), all_codes
+		decoded_motion_features = self.motionDecoder(quantized_enc_motion) # b n d
 		
-		quantized_enc_motion, indices, commit_loss = self.rq(embed_motion_features, return_all_codes = all_codes)
-		return quantized_enc_motion, indices, commit_loss.sum()
+
+		return decoded_motion_features , indices, commit_loss
+
+
+	def encode(self, motion_input):
+
+		with torch.no_grad():
+			embed_motion_features = self.motionEncoder(motion_input)
+			indices = self.vq.encode(embed_motion_features)
+			return indices
 
 	def decode(self, indices):
-		all_codes =  self.rq.get_codes_from_indices(indices)
-		quantized_enc_motion = torch.sum(all_codes,0)
-		decoded_motion_features = self.motionDecoder(quantized_enc_motion)
-		return decoded_motion_features
 
+		with torch.no_grad():
+			quantized = self.vq.decode(indices)
+			out_motion = self.motionDecoder(quantized)
+			return quantized, out_motion
+
+
+
+
+	# def decode(self, indices):
+	# 	all_codes =  self.rq.get_codes_from_indices(indices)
+	# 	quantized_enc_motion = torch.sum(all_codes,0)
+	# 	decoded_motion_features = self.motionDecoder(quantized_enc_motion)
+	# 	return decoded_motion_features
+
+	# def decode_from_codebook_indices(self, quantized_indices):
+	# 		## quantized_indices batch,seq,quantize_dim
+	# 		codes = self.rq.get_codes_from_indices(quantized_indices)
+	# 		x = reduce(codes, 'q ... -> ...', 'sum')
+	# 		# x = rearrange(x, 'b n c -> b c n')
+	# 		return codes , self.motionDecoder(x)
+	
 	
