@@ -196,6 +196,8 @@ class EuclideanCodebook(nn.Module):
         modified_codebook = torch.where(
             mask[..., None], sample_vectors(samples, self.codebook_size), self.embed
         )
+        ## basically sample vectors : shape 1024x128, with each value randomly chosen from input. 
+        ## If code expired replace it with a random vector from input else do nothing
         self.embed.data.copy_(modified_codebook)
 
     def expire_codes_(self, batch_samples):
@@ -224,6 +226,21 @@ class EuclideanCodebook(nn.Module):
         embed_ind = dist.max(dim=-1).indices
         return embed_ind
 
+    def masked_quantize(self,x , mask):
+        embed = self.embed.t()
+        dist = -(
+            x.pow(2).sum(1, keepdim=True)
+            - 2 * x @ embed
+            + embed.pow(2).sum(0, keepdim=True)
+        )
+        mask_value = -torch.finfo(dist.dtype).max
+        dist = dist + dist.masked_fill(~mask[...,None] , mask_value)
+        embed_ind = dist.max(dim=-1).indices
+        return embed_ind
+
+
+
+
     def postprocess_emb(self, embed_ind, shape):
         return embed_ind.view(*shape[:-1])
 
@@ -245,12 +262,16 @@ class EuclideanCodebook(nn.Module):
         quantize = self.dequantize(embed_ind)
         return quantize
 
-    def forward(self, x):
+    def forward(self, x , mask = None):
+        ##x: b n d, msk: b n
         shape, dtype = x.shape, x.dtype
         x = self.preprocess(x)
-
         self.init_embed_(x)
 
+
+        if mask is not None:
+            mask = rearrange(mask, "... -> (...)")
+            
         embed_ind = self.quantize(x)
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
         embed_ind = self.postprocess_emb(embed_ind, shape)
@@ -260,6 +281,9 @@ class EuclideanCodebook(nn.Module):
             # We do the expiry of code at that point as buffers are in sync
             # and all the workers will take the same decision.
             self.expire_codes_(x)
+            if mask is not None:
+                embed_onehot = embed_onehot * mask[...,None]
+
             ema_inplace(self.cluster_size, embed_onehot.sum(0), self.decay)
             embed_sum = x.t() @ embed_onehot
             ema_inplace(self.embed_avg, embed_sum.t(), self.decay)
@@ -334,12 +358,13 @@ class VectorQuantization(nn.Module):
         # quantize = rearrange(quantize, "b n d -> b d n")
         return quantize
 
-    def forward(self, x):
+    def forward(self, x , mask = None):
         device = x.device
+
         # x = rearrange(x, "b d n -> b n d")
         x = self.project_in(x)
 
-        quantize, embed_ind = self._codebook(x)
+        quantize, embed_ind = self._codebook(x , mask)
 
         if self.training:
             quantize = x + (quantize - x).detach()

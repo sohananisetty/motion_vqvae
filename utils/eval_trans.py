@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from scipy import linalg
 
-import visualization.plot_3d_global as plot_3d
+import visualize.plot_3d_global as plot_3d
 from utils.motion_process import recover_from_ric
 
 
@@ -38,6 +38,8 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
     matching_score_pred = 0
     for batch in val_loader:
         word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, token, name = batch
+        motion = motion.to(torch.float32)
+
 
         motion = motion.cuda()
         et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, motion, m_length)
@@ -52,7 +54,7 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
             pose_xyz = recover_from_ric(torch.from_numpy(pose).float().cuda(), num_joints)
 
 
-            pred_pose, loss_commit, perplexity = net(motion[i:i+1, :m_length[i]])
+            pred_pose, ind, loss_commit = net(motion[i:i+1, :m_length[i]])
             pred_denorm = val_loader.dataset.inv_transform(pred_pose.detach().cpu().numpy())
             pred_xyz = recover_from_ric(torch.from_numpy(pred_denorm).float().cuda(), num_joints)
             

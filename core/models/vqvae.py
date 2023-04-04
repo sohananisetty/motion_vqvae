@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from x_transformers.x_transformers import AttentionLayers, Encoder, Decoder, exists, default, always,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, l2norm
-from vector_quantize_pytorch import ResidualVQ
+from vector_quantize_pytorch import ResidualVQ, VectorQuantize
 from einops import rearrange, reduce, pack, unpack
 from core.quantization.core_vq import VectorQuantization
 
@@ -35,14 +35,13 @@ class MotionTransformer(nn.Module):
 		scaled_sinu_pos_emb = False,
 		l2norm_embed = False,
 		emb_frac_gradient = 1. # GLM-130B and Cogview successfully used this, set at 0.1
-	):
+		):
 		super().__init__()
 		assert isinstance(attn_layers, AttentionLayers), 'attention layers must be one of Encoder or Decoder'
 
 		dim = attn_layers.dim
 		emb_dim = default(emb_dim, dim)
 		self.emb_dim = emb_dim
-#         self.num_memory_tokens = num_memory_tokens
 
 		self.max_seq_len = max_seq_len
 		self.logits_dim = logits_dim
@@ -171,11 +170,11 @@ class MotionDecoder(nn.Module):
 		self.attn_layers = attn_layers
 		
 
-	def forward(self, x):
+	def forward(self, x , mask = None):
 		"""x: b n c"""
 		
 	   
-		x = self.attn_layers(x)
+		x = self.attn_layers(x , mask = mask)
 		logits = self.to_logit(x)
 
 		return logits
@@ -241,7 +240,7 @@ class VQMotionModel(nn.Module):
 			threshold_ema_dead_code = 2,
 		)
 
-	def forward(self, motion):
+	def forward(self, motion , mask = None):
 		"""Predict sequences from inputs. 
 
 		This is a single forward pass that been used during training. 
@@ -258,23 +257,23 @@ class VQMotionModel(nn.Module):
 		motion_input = motion #b n d
 		
 		
-		embed_motion_features = self.motionEncoder(motion_input) #b n d
+		embed_motion_features = self.motionEncoder(motion_input , mask = mask) #b n d
 
 		##codebook
-		quantized_enc_motion, indices, commit_loss = self.vq(embed_motion_features)
+		quantized_enc_motion, indices, commit_loss = self.vq(embed_motion_features,mask = mask)
 		# b n d , b n q , q
 		
 		## decoder
-		decoded_motion_features = self.motionDecoder(quantized_enc_motion) # b n d
+		decoded_motion_features = self.motionDecoder(quantized_enc_motion,mask = mask) # b n d
 		
 
-		return decoded_motion_features , indices, commit_loss
+		return decoded_motion_features , indices, commit_loss.sum()
 
 
-	def encode(self, motion_input):
+	def encode(self, motion_input , mask = None):
 
 		with torch.no_grad():
-			embed_motion_features = self.motionEncoder(motion_input)
+			embed_motion_features = self.motionEncoder(motion_input,mask = mask)
 			indices = self.vq.encode(embed_motion_features)
 			return indices
 

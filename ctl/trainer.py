@@ -19,7 +19,7 @@ import transformers
 
 from core.optimizer import get_optimizer
 from render_final import render
-from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader
+from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,MotionCollator
 from tqdm import tqdm
 from collections import Counter
 import visualize.plot_3d_global as plot_3d
@@ -71,6 +71,8 @@ class VQVAEMotionTrainer(nn.Module):
 		vqvae_model: VQMotionModel,
 		args,
 		training_args,
+		dataset_args,
+		model_name = "",
 		apply_grad_penalty_every = 4,
 		valid_frac = 0.01,
 		max_grad_norm = 0.5,
@@ -85,11 +87,14 @@ class VQVAEMotionTrainer(nn.Module):
 
 		self.args = args
 		self.training_args = training_args
+		self.dataset_name = dataset_args.dataset_name
+		self.model_name = model_name
+		self.enable_var_len = dataset_args.var_len
 
 
 		if self.is_main:
 			wandb.login()
-			wandb.init(project="vqvae_vq_768_128")
+			wandb.init(project=f"{self.model_name}")
 
 		self.output_dir = Path(self.training_args.output_dir)
 		self.output_dir.mkdir(parents = True, exist_ok = True)
@@ -102,7 +107,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 
-		self.args.nb_joints = 22 if self.args.dataset_name == "t2m" else 21
+		self.args.nb_joints = 22 if self.dataset_name == "t2m" else 21
 
 		
 		self.num_train_steps = self.training_args.num_train_iters
@@ -121,19 +126,26 @@ class VQVAEMotionTrainer(nn.Module):
 
 		self.max_grad_norm = max_grad_norm
 
-		train_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder,max_motion_length = self.args.max_seq_length)
-		valid_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
-		self.render_ds = VQMotionDataset(self.args.dataset_name, data_root = self.args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
+		if self.enable_var_len:
+			train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_motion_length = self.args.max_seq_length)
+			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
+			self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
+		else:
+
+			train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_motion_length = self.args.max_seq_length)
+			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
+			self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
 
 		self.print(f'training with training and valid dataset of {len(train_ds)} and {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
 		# dataloader
+		collate_fn = MotionCollator(self.args.max_seq_length) if self.enable_var_len else None
 
 		
 
-		self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,)
-		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False)
-		self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False)
+		self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
+		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=collate_fn)
+		self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
 
 		# prepare with accelerator
 
@@ -162,7 +174,7 @@ class VQVAEMotionTrainer(nn.Module):
 		self.apply_grad_penalty_every = apply_grad_penalty_every
 
 		hps = {"num_train_steps": self.num_train_steps, "max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
-		self.accelerator.init_trackers("vqvae_vanilla", config=hps)        
+		self.accelerator.init_trackers(f"{self.model_name}", config=hps)        
 
 
 	def print(self, msg):
@@ -225,21 +237,26 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 		for _ in range(self.grad_accum_every):
-			gt_motion = next(self.dl_iter)
+			batch = next(self.dl_iter)
 
-			# print(gt_motion.shape)
+			gt_motion = batch["motion"]
 
-			pred_motion , indices, commit_loss = self.vqvae_model(gt_motion)
+			if batch.get("motion_mask" , None) is None:
 
-			# print(pred_motion.shape)
-			
-			loss_motion = self.loss_fnc(pred_motion, gt_motion)
+				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion)				
+				loss_motion = self.loss_fnc(pred_motion, gt_motion)
+				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion)
+				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
 
-			# print(loss_motion.shape)
-			loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion)
-			# print(loss_vel.shape)
+			else:
+				mask = batch["motion_mask"]
+				lengths = batch["motion_lengths"]
 
-			loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
+				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion , mask)				
+				loss_motion = self.loss_fnc(pred_motion, gt_motion , mask)
+				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion , mask)
+				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
+
 
 
 			# print(loss,loss.shape)
@@ -262,7 +279,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		# build pretty printed losses
 
-		losses_str = f"{steps}: vqvae model total loss: {loss:.3f} reconstruction loss: {loss_motion:.3f} loss_vel: {loss_vel:.3f} commitment loss: {commit_loss:.3f}"
+		losses_str = f"{steps}: vqvae model total loss: {loss.float():.3} reconstruction loss: {loss_motion.float():.3} loss_vel: {loss_vel.float():.3} commitment loss: {commit_loss.float():.3}"
 		if log_losses:
 			self.accelerator.log({
 				"total_loss": loss,
@@ -282,7 +299,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		if self.is_main and (steps % self.evaluate_every == 0):
 			self.validation_step()
-			self.sample_render(os.path.join(self.args.output_dir , "samples"))
+			self.sample_render(os.path.join(self.output_dir , "samples"))
 			
 				
 		# save model
