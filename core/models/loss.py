@@ -25,7 +25,8 @@ class ReConsLoss(nn.Module):
             loss = self.Loss(motion_pred[..., : self.motion_dim], motion_gt[..., :self.motion_dim])
         else:
             # F.mse_loss(batch["motion"] * batch["motion_mask"][...,None] , pred_motion*batch["motion"] * batch["motion_mask"][...,None], reduction = "sum")
-            loss = self.Loss(motion_pred[..., : self.motion_dim]*mask[...,None] , motion_gt[..., :self.motion_dim]*mask[...,None]) * (motion_pred.numel()/(mask.sum()*motion_pred.shape[-1]))
+            norm =  motion_pred.numel()/(mask.sum()*motion_pred.shape[-1])
+            loss = self.Loss(motion_pred[..., : self.motion_dim]*mask[...,None] , motion_gt[..., :self.motion_dim]*mask[...,None]) * norm
             
         return loss
     
@@ -35,8 +36,8 @@ class ReConsLoss(nn.Module):
             loss = self.Loss(motion_pred[..., 4 : (self.nb_joints - 1) * 3 + 4], motion_gt[..., 4 : (self.nb_joints - 1) * 3 + 4])
 
         else:
-            # F.mse_loss(batch["motion"] * batch["motion_mask"][...,None] , pred_motion*batch["motion"] * batch["motion_mask"][...,None], reduction = "sum")
-            loss = self.Loss(motion_pred[..., 4 : (self.nb_joints - 1) * 3 + 4]*mask[...,None] , motion_gt[..., 4 : (self.nb_joints - 1) * 3 + 4]*mask[...,None]) * (((self.nb_joints - 1) * 3).numel()/(mask.sum()*motion_pred.shape[-1]))
+            norm = motion_pred[..., 4 : (self.nb_joints - 1) * 3 + 4].numel()/(mask.sum()*motion_pred.shape[-1])
+            loss = self.Loss(motion_pred[..., 4 : (self.nb_joints - 1) * 3 + 4]*mask[...,None] , motion_gt[..., 4 : (self.nb_joints - 1) * 3 + 4]*mask[...,None]) * norm
             
         
         return loss

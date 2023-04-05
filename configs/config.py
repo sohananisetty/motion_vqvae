@@ -43,9 +43,9 @@ cfg.train.num_train_iters = 500000 #'Number of training steps
 cfg.train.save_steps = 5000
 cfg.train.logging_steps = 10
 cfg.train.wandb_every = 100
-cfg.train.evaluate_every = 10000
-cfg.train.eval_bs = 64
-cfg.train.train_bs = 64
+cfg.train.evaluate_every = 5000
+cfg.train.eval_bs = 8
+cfg.train.train_bs = 8
 cfg.train.gradient_accumulation_steps = 4
 
 cfg.train.write_summary = True
@@ -60,6 +60,7 @@ cfg.train.gamma = 0.05
 cfg.train.lr_scheduler_type = "cosine"
 
 cfg.vqvae = CN()
+
 cfg.vqvae.nb_joints = 22 if cfg.dataset.dataset_name == "t2m" else 21
 cfg.vqvae.motion_dim = 263 #'Input motion dimension dimension'
 cfg.vqvae.enc_dec_dim = 768 #'Encoder and Decoder dimension'

@@ -6,7 +6,7 @@ import random
 import codecs as cs
 from tqdm import tqdm
 import os
-
+from torch.utils.data.dataloader import default_collate 
 
 class MotionCollator():
     def __init__(self, max_seq_length):
@@ -47,12 +47,25 @@ class MotionCollator():
    
         return batch    
     
+def id_collate(samples):
+    new_batch = []
+    ids = []
+    for inp,name in samples:
+        new_batch.append(torch.Tensor(inp))
+        ids.append(name)
 
+    batch = {
+            "motion": torch.stack(new_batch , 0),
+            "names" : np.array(ids)
+
+        }
+    
+    return batch
 
 class VQMotionDataset(data.Dataset):
-    def __init__(self, dataset_name, data_root, max_motion_length = 196, min_length_seconds = 2, fps = 20, split = "train"):
+    def __init__(self, dataset_name, data_root, max_motion_length = 196, window_size = 64, fps = 20, split = "train"):
         self.fps = fps
-        self.window_size = self.fps*min_length_seconds
+        self.window_size = window_size
         self.dataset_name = dataset_name
         self.split = split
 
@@ -133,26 +146,27 @@ class VQMotionDataset(data.Dataset):
         "Z Normalization"
         motion = (motion - self.mean) / self.std
 
-        if self.split in ["val", "test" , "render"]:
-            return motion , self.id_list[item]
+        # if self.split in ["val", "test" , "render"]:
+        #     return motion , self.id_list[item]
         
-        batch = {
-            "motion": motion,
-        }
+        # batch = {
+        #     "motion": motion,
+        #     "names" :self.id_list[item],
+        # }
 
-
-        return batch
+        return motion , self.id_list[item]
     
-
-
-
 class VQVarLenMotionDataset(data.Dataset):
-    def __init__(self, dataset_name, data_root, max_length_seconds = 10, min_length_seconds = 1.5, fps = 20, split = "train"):
+    def __init__(self, dataset_name, data_root, max_length_seconds = 10, min_length_seconds = 3, fps = 20, split = "train"):
         self.fps = fps
+        self.min_length_seconds = min_length_seconds
+        self.max_length_seconds = max_length_seconds
+
         self.min_motion_length = self.fps*min_length_seconds
         self.max_motion_length = self.fps*max_length_seconds
         self.dataset_name = dataset_name
         self.split = split
+        self.set_stage(0)
 
         if dataset_name == 't2m':
             self.data_root = data_root
@@ -197,9 +211,9 @@ class VQVarLenMotionDataset(data.Dataset):
         for name in tqdm(self.id_list):
             try:
                 motion = np.load(os.path.join(self.motion_dir, name + '.npy'))
-                if motion.shape[0] < self.window_size:
+                if motion.shape[0] < self.min_motion_length:
                     continue
-                self.lengths.append(motion.shape[0] - self.window_size)
+                self.lengths.append(motion.shape[0])
                 self.data.append(motion)
             except:
                 # Some motion may not exist in KIT dataset
@@ -212,6 +226,19 @@ class VQVarLenMotionDataset(data.Dataset):
 
     def inv_transform(self, data):
         return data * self.std + self.mean
+    
+    def set_stage(self, stage):
+        n= 4
+
+        lengths = [self.min_motion_length , self.min_motion_length +20,
+                                            self.min_motion_length +40 , 
+                                            self.min_motion_length +80 , 
+                                            self.min_motion_length +120 , 
+                                            self.fps*self.max_length_seconds
+                                      ]
+        self.max_motion_length = lengths[stage]
+        print(f'changing range to: {self.min_motion_length} - {self.max_motion_length}')
+        
     
     def compute_sampling_prob(self) : 
         
@@ -227,8 +254,11 @@ class VQVarLenMotionDataset(data.Dataset):
         
         motion_len = len(motion)
         
-        self.window_size = np.random.randint(self.min_motion_length , min(motion_len , self.max_motion_length))
-        
+        try:
+            self.window_size = np.random.randint(self.min_motion_length , min(motion_len , self.max_motion_length))
+        except:
+            self.window_size = self.min_motion_length
+
         
         idx = random.randint(0, len(motion) - self.window_size)
 
@@ -254,6 +284,8 @@ def DATALoader(
             collate_fn = None,
            ):
 
+    if collate_fn is None:
+        collate_fn= id_collate
     # prob = dataset.compute_sampling_prob()
     # sampler = torch.utils.data.WeightedRandomSampler(prob, num_samples = len(dataset) * 1000, replacement=True)
    

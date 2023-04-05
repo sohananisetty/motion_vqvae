@@ -19,7 +19,7 @@ import transformers
 
 from core.optimizer import get_optimizer
 from render_final import render
-from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,MotionCollator
+from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator
 from tqdm import tqdm
 from collections import Counter
 import visualize.plot_3d_global as plot_3d
@@ -87,14 +87,20 @@ class VQVAEMotionTrainer(nn.Module):
 
 		self.args = args
 		self.training_args = training_args
+		self.dataset_args = dataset_args
 		self.dataset_name = dataset_args.dataset_name
 		self.model_name = model_name
 		self.enable_var_len = dataset_args.var_len
 
+		print("self.enable_var_len: ", self.enable_var_len)
+
+		self.stage_steps = [0 , 100000 , 140000,180000,220000 , 300000 ]
+		self.stage = -1
+
 
 		if self.is_main:
 			wandb.login()
-			wandb.init(project=f"{self.model_name}")
+			wandb.init(project="vqvae_768_768_vl")
 
 		self.output_dir = Path(self.training_args.output_dir)
 		self.output_dir.mkdir(parents = True, exist_ok = True)
@@ -127,9 +133,9 @@ class VQVAEMotionTrainer(nn.Module):
 		self.max_grad_norm = max_grad_norm
 
 		if self.enable_var_len:
-			train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_motion_length = self.args.max_seq_length)
+			train_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder)
 			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
-			self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
+			self.render_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" )
 		else:
 
 			train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_motion_length = self.args.max_seq_length)
@@ -153,12 +159,15 @@ class VQVAEMotionTrainer(nn.Module):
 			self.vqvae_model,
 			self.optim,
 			self.dl,
-			self.valid_dl
+			self.valid_dl,
+			self.render_dl
+
 		) = self.accelerator.prepare(
 			self.vqvae_model,
 			self.optim,
 			self.dl,
-			self.valid_dl
+			self.valid_dl,
+			self.render_dl
 		)
 
 		self.accelerator.register_for_checkpointing(self.lr_scheduler)
@@ -225,7 +234,17 @@ class VQVAEMotionTrainer(nn.Module):
 
 	def train_step(self):
 
+		
+
+
 		steps = int(self.steps.item())
+
+		if steps in self.stage_steps:
+			self.stage = min(self.stage+1 , len(self.stage_steps))
+			print("stage" , self.stage)
+			self.dl.dataset.set_stage(self.stage)
+
+
 		apply_grad_penalty = self.apply_grad_penalty_every > 0 and not (steps % self.apply_grad_penalty_every)
 		log_losses = self.log_losses_every > 0 and not (steps % self.log_losses_every)
 
@@ -241,7 +260,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 			gt_motion = batch["motion"]
 
-			if batch.get("motion_mask" , None) is None:
+			if self.enable_var_len is False:
 
 				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion)				
 				loss_motion = self.loss_fnc(pred_motion, gt_motion)
@@ -264,9 +283,11 @@ class VQVAEMotionTrainer(nn.Module):
 			self.accelerator.backward(loss / self.grad_accum_every)
 
 			accum_log(logs, dict(
+				loss = loss/self.grad_accum_every,
 				loss_motion = loss_motion/ self.grad_accum_every,
 				loss_vel = loss_vel / self.grad_accum_every,
 				commit_loss = commit_loss / self.grad_accum_every,
+				avg_max_length = int(max(lengths)) / self.grad_accum_every
 				))
 
 	
@@ -277,15 +298,19 @@ class VQVAEMotionTrainer(nn.Module):
 		self.lr_scheduler.step()
 		self.optim.zero_grad()
 
+
 		# build pretty printed losses
 
-		losses_str = f"{steps}: vqvae model total loss: {loss.float():.3} reconstruction loss: {loss_motion.float():.3} loss_vel: {loss_vel.float():.3} commitment loss: {commit_loss.float():.3}"
+		losses_str = f"{steps}: vqvae model total loss: {logs['loss'].float():.3} reconstruction loss: {logs['loss_motion'].float():.3} loss_vel: {logs['loss_vel'].float():.3} commitment loss: {logs['commit_loss'].float():.3} average max length: {logs['avg_max_length']}"
+
 		if log_losses:
 			self.accelerator.log({
-				"total_loss": loss,
-				"loss_motion":loss_motion,
-				"loss_vel": loss_vel,
-				"commit_loss" :commit_loss
+				"total_loss": logs["loss"],
+				"loss_motion":logs["loss_motion"],
+				"loss_vel": logs["loss_vel"],
+				"commit_loss" :logs["commit_loss"],
+				"average_max_length":logs["avg_max_length"],
+
 			}, step=steps)
 
 		# log
@@ -331,9 +356,9 @@ class VQVAEMotionTrainer(nn.Module):
 
 		with torch.no_grad():
 
-			for gt_motion,_ in tqdm((self.valid_dl), position=0, leave=True):
-				
+			for batch in tqdm((self.valid_dl), position=0, leave=True):
 
+				gt_motion = batch["motion"]
 
 				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion)
 				loss_motion = self.loss_fnc(pred_motion, gt_motion)
@@ -369,10 +394,23 @@ class VQVAEMotionTrainer(nn.Module):
 		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
 		os.makedirs(save_file , exist_ok=True)
 
+		print(self.render_dl.batch_size)
+		
+		# assert self.render_dl.batch_size == 1 , "Batch size for rendering should be 1!"
+
 		self.vqvae_model.eval()
 		print(f"render start")
 		with torch.no_grad():
-			for gt_motion,name in tqdm(self.render_dl):
+			for batch in tqdm(self.render_dl):
+
+
+				gt_motion = batch["motion"]
+				name = batch["names"]
+
+				motion_len = int(batch.get("motion_lengths" , [gt_motion.shape[1]])[0])
+
+				gt_motion = gt_motion[:,:motion_len,:]
+
 				pred_motion , _, _ = self.vqvae_model(gt_motion)
 
 				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
@@ -390,6 +428,7 @@ class VQVAEMotionTrainer(nn.Module):
 				# render(gt_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=False)
 
 		self.vqvae_model.train()
+
 
 	def train(self, resume = False, log_fn = noop):
 
