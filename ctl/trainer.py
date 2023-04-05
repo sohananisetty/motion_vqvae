@@ -94,7 +94,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = [0 , 100000 , 140000,180000,220000 , 300000 ]
+		self.stage_steps = [0 , 40000 , 60000,100000,150000 , 200000 ]
 		self.stage = -1
 
 

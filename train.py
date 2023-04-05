@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_folder', default="/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D", help="folder with train and test data")
     parser.add_argument('--pretrained', default='')
     parser.add_argument('--resume', default=False, type = bool)
-    parser.add_argument('--output_dir', default="./checkpoints/var_len/vq_768_768")
+    parser.add_argument('--output_dir', default="/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768")
     # parser.add_argument('--evaluate', action='store_true')
     # parser.add_argument('--seed', default=42, type=int)
     # parser.add_argument('--fp16', default=True, type=bool)
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--var_len', default=True, type=bool)
 
 
-    parser.add_argument('--train_bs', default=24, type=int,)
+    parser.add_argument('--train_bs', default=48, type=int,)
     # parser.add_argument('--eval_bs', default=64, type=int,)
     parser.add_argument('--gradient_accumulation_steps', default=4, type=int,)
 
@@ -94,8 +94,6 @@ if __name__ == '__main__':
         "train.warmup_steps" , args.warmup_steps,
         "train.resume" , args.resume
     ])
-
-
 
 
 

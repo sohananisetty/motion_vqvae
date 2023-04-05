@@ -44,8 +44,8 @@ cfg.train.save_steps = 5000
 cfg.train.logging_steps = 10
 cfg.train.wandb_every = 100
 cfg.train.evaluate_every = 5000
-cfg.train.eval_bs = 8
-cfg.train.train_bs = 8
+cfg.train.eval_bs = 24
+cfg.train.train_bs = 24
 cfg.train.gradient_accumulation_steps = 4
 
 cfg.train.write_summary = True
