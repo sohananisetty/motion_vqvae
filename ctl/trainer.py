@@ -2,7 +2,7 @@ from math import sqrt
 from pathlib import Path
 
 import os
-
+import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -94,7 +94,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = [0 , 40000 , 60000,100000,150000 , 200000 ]
+		self.stage_steps = [0 , 40000 , 100000,140000, 180000 , 200000 ]
 		self.stage = -1
 
 
@@ -228,6 +228,7 @@ class VQVAEMotionTrainer(nn.Module):
 		self.optim.load_state_dict(pkg['optim'])
 		self.steps = pkg["steps"]
 		self.best_loss = pkg["total_loss"]
+		self.stage = np.searchsorted(self.stage_steps , int(self.steps.item())) - 1
 		print("starting at step: ", self.steps)
 
 
@@ -240,7 +241,8 @@ class VQVAEMotionTrainer(nn.Module):
 		steps = int(self.steps.item())
 
 		if steps in self.stage_steps:
-			self.stage = min(self.stage+1 , len(self.stage_steps))
+			self.stage += 1 
+			self.stage  = min(self.stage , len(self.stage_steps))
 			print("stage" , self.stage)
 			self.dl.dataset.set_stage(self.stage)
 
@@ -394,7 +396,6 @@ class VQVAEMotionTrainer(nn.Module):
 		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
 		os.makedirs(save_file , exist_ok=True)
 
-		print(self.render_dl.batch_size)
 		
 		# assert self.render_dl.batch_size == 1 , "Batch size for rendering should be 1!"
 

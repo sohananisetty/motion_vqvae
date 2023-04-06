@@ -228,7 +228,6 @@ class VQVarLenMotionDataset(data.Dataset):
         return data * self.std + self.mean
     
     def set_stage(self, stage):
-        n= 4
 
         lengths = [self.min_motion_length , self.min_motion_length +20,
                                             self.min_motion_length +40 , 

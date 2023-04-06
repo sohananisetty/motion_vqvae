@@ -18,7 +18,7 @@ cfg.device = 'cuda'
 cfg.vqvae_model_name = "vqvae"
 
 cfg.pretrained_modelpath = os.path.join(cfg.abs_dir, f"checkpoints/{cfg.vqvae_model_name}/vqvae_motion.pt")
-cfg.output_dir = os.path.join(cfg.abs_dir , "checkpoints/")
+cfg.output_dir = os.path.join(cfg.abs_dir , "checkpoints/var_len/vq_768_768")
 
 cfg.eval_output_dir = os.path.join(cfg.abs_dir , "eval/")
 
