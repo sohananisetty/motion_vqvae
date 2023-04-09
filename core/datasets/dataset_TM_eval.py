@@ -36,7 +36,9 @@ class Text2MotionDataset(data.Dataset):
             self.max_motion_length = 196
             dim_pose = 263
             kinematic_chain = paramUtil.t2m_kinematic_chain
-            self.meta_dir = '/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta'
+            self.meta_dir = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D"
+            
+            # '/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta'
         elif dataset_name == 'kit':
             self.data_root = "/srv/scratch/sanisetty3/music_motion/motion-diffusion-model/dataset/KIT-ML"
             self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
@@ -49,8 +51,8 @@ class Text2MotionDataset(data.Dataset):
             kinematic_chain = paramUtil.kit_kinematic_chain
             self.meta_dir = '/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/kit/VQVAEV3_CB1024_CMT_H1024_NRES3/meta'
 
-        mean = np.load(pjoin(self.meta_dir, 'mean.npy'))
-        std = np.load(pjoin(self.meta_dir, 'std.npy'))
+        mean = np.load(pjoin(self.meta_dir, 'Mean.npy'))
+        std = np.load(pjoin(self.meta_dir, 'Std.npy'))
         
         if is_test:
             split_file = pjoin(self.data_root, 'test.txt')

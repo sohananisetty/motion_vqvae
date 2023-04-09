@@ -1,0 +1,39 @@
+vqvae_model_name: "vqvae_motion_vl"
+output_dir: 
+dataset:
+  dataset_name: "t2m"
+  var_len: True
+  data_folder: "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D"
+train:
+  resume: True
+  num_train_iters : 500000 #'Number of training steps
+  save_steps : 5000
+  logging_steps : 10
+  wandb_every : 100
+  evaluate_every : 5000
+  eval_bs : 48
+  train_bs : 48
+  gradient_accumulation_steps : 4
+  learning_rate : 2e-4
+  weight_decay : 0.0
+  warmup_steps : 4000
+  gamma : 0.05
+  lr_scheduler_type : "cosine"
+vqvae:
+  nb_joints : 22
+  motion_dim : 263 
+  enc_dec_dim : 768
+  depth : 12
+  heads: 8
+  codebook_dim : 768
+  codebook_size : 1024
+  commit : 0.02
+  loss_vel : 0.5
+  recons_loss : "l1_smooth"
+  max_seq_length : 200
+  min_seq_length : 20
+
+  
+  
+  
+

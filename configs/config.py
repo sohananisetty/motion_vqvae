@@ -70,8 +70,8 @@ cfg.vqvae.codebook_dim = 768
 cfg.vqvae.codebook_size = 1024
 
 ## Loss
-cfg.vqvae.commit = 1  #"hyper-parameter for the commitment loss"
-cfg.vqvae.loss_vel = 0.1
+cfg.vqvae.commit = 0.02  #"hyper-parameter for the commitment loss"
+cfg.vqvae.loss_vel = 0.5
 cfg.vqvae.recons_loss = "l1_smooth" #l1_smooth , l1 , l2
 cfg.vqvae.max_seq_length = 200
 cfg.vqvae.min_seq_length = 20
@@ -106,3 +106,8 @@ cfg.eval_model.dim_movement_dec_hidden= 512
 cfg.eval_model.dim_movement_latent = 512
 
 
+def get_cfg_defaults():
+  """Get a yacs CfgNode object with default values for my_project."""
+  # Return a clone so that the defaults will not be altered
+  # This is for the "local variable" use pattern
+  return cfg.clone()

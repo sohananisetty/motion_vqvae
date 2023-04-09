@@ -27,6 +27,11 @@ import visualize.plot_3d_global as plot_3d
 from core.models.vqvae import VQMotionModel
 from core.models.loss import ReConsLoss
 from utils.motion_process import recover_from_ric
+from utils.eval_trans import evaluation_vqvae_loss
+from core.models.evaluator_wrapper import EvaluatorModelWrapper
+from utils.word_vectorizer import WordVectorizer
+
+
 
 def exists(val):
 	return val is not None
@@ -72,6 +77,7 @@ class VQVAEMotionTrainer(nn.Module):
 		args,
 		training_args,
 		dataset_args,
+		eval_args,
 		model_name = "",
 		apply_grad_penalty_every = 4,
 		valid_frac = 0.01,
@@ -94,8 +100,8 @@ class VQVAEMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = [0 , 40000 , 100000,140000, 180000 , 200000 ]
-		self.stage = -1
+		self.stage_steps = [0 , 40000 , 80000,120000, 160000 , 200000 ]
+		self.stage = 0
 
 
 		if self.is_main:
@@ -182,6 +188,12 @@ class VQVAEMotionTrainer(nn.Module):
 
 		self.apply_grad_penalty_every = apply_grad_penalty_every
 
+
+		self.w_vectorizer = WordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
+		self.eval_wrapper = EvaluatorModelWrapper(eval_args.eval_model)
+		self.best_fid = float("-inf")
+
+
 		hps = {"num_train_steps": self.num_train_steps, "max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
 		self.accelerator.init_trackers(f"{self.model_name}", config=hps)        
 
@@ -228,8 +240,11 @@ class VQVAEMotionTrainer(nn.Module):
 		self.optim.load_state_dict(pkg['optim'])
 		self.steps = pkg["steps"]
 		self.best_loss = pkg["total_loss"]
+		# print("Loading at stage" , np.searchsorted(self.stage_steps , int(self.steps.item())) - 1)
 		self.stage = np.searchsorted(self.stage_steps , int(self.steps.item())) - 1
-		print("starting at step: ", self.steps)
+		print("starting at step: ", self.steps ,"and stage", self.stage)
+		self.dl.dataset.set_stage(self.stage)
+
 
 
 
@@ -241,9 +256,10 @@ class VQVAEMotionTrainer(nn.Module):
 		steps = int(self.steps.item())
 
 		if steps in self.stage_steps:
-			self.stage += 1 
-			self.stage  = min(self.stage , len(self.stage_steps))
-			print("stage" , self.stage)
+			# self.stage += 1 
+			self.stage = self.stage_steps.index(steps)
+			# self.stage  = min(self.stage , len(self.stage_steps))
+			print("changing to stage" , self.stage)
 			self.dl.dataset.set_stage(self.stage)
 
 
@@ -325,7 +341,15 @@ class VQVAEMotionTrainer(nn.Module):
 		
 
 		if self.is_main and (steps % self.evaluate_every == 0):
-			self.validation_step()
+			# self.validation_step()
+			best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_dict = evaluation_vqvae_loss(
+				val_loader = self.valid_dl, 
+				net= self.vqvae_model,
+				nb_iter= steps, 
+				eval_wrapper = self.eval_wrapper,
+				loss_fnc = self.loss_fnc,
+				)
+			
 			self.sample_render(os.path.join(self.output_dir , "samples"))
 			
 				
