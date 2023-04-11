@@ -32,19 +32,19 @@ class EvaluatorModelWrapper(object):
     def __init__(self, opt):
 
         if opt.dataset_name == 't2m':
-            opt.dim_pose = 263
+            assert opt.dim_pose == 263, "dim_pose shuld be 263"
         elif opt.dataset_name == 'kit':
-            opt.dim_pose = 251
+            assert opt.dim_pose == 251, "dim_pose shuld be 251"
         else:
             raise KeyError('Dataset not Recognized!!!')
 
-        opt.dim_word = 300
-        opt.max_motion_length = 196
-        opt.dim_pos_ohot = len(POS_enumerator)
-        opt.dim_motion_hidden = 1024
-        opt.max_text_len = 20
-        opt.dim_text_hidden = 512
-        opt.dim_coemb_hidden = 512
+        # opt.dim_word = 300
+        # opt.max_motion_length = 196
+        # opt.dim_pos_ohot = len(POS_enumerator)
+        # opt.dim_motion_hidden = 1024
+        # opt.max_text_len = 20
+        # opt.dim_text_hidden = 512
+        # opt.dim_coemb_hidden = 512
 
         # print(opt)
 

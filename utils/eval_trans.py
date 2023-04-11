@@ -27,6 +27,9 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
 	draw_pred = []
 	draw_text = []
 
+	mean_gpt = np.load("/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta/mean.npy")
+	std_gpt = np.load("/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta/std.npy")
+
 
 	motion_annotation_list = []
 	motion_pred_list = []
@@ -40,10 +43,13 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
 	for batch in tqdm(val_loader ,position=0, leave=True ):
 		word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, token, name = batch
 		motion = motion.to(torch.float32)
+		denorm = val_loader.dataset.inv_transform(motion.detach().cpu())
+		denorm = (denorm - mean_gpt) / std_gpt
+
 
 
 		motion = motion.cuda()
-		et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, motion, m_length)
+		et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, denorm, m_length)
 		bs, seq = motion.shape[0], motion.shape[1]
 
 		num_joints = 21 if motion.shape[-1] == 251 else 22
@@ -56,14 +62,15 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
 
 
 			pred_pose, ind, loss_commit = net(motion[i:i+1, :m_length[i]])
-			pred_denorm = val_loader.dataset.inv_transform(pred_pose.detach().cpu().numpy())
-			pred_xyz = recover_from_ric(torch.from_numpy(pred_denorm).float().cuda(), num_joints)
+			pred_denorm = val_loader.dataset.inv_transform(pred_pose.detach().cpu())
+			pred_denorm = (pred_denorm - mean_gpt) / std_gpt
+			pred_xyz = recover_from_ric(torch.from_numpy(pred_denorm.numpy()).float().cuda(), num_joints)
 			
 			if savenpy:
 				np.save(os.path.join(out_dir, name[i]+'_gt.npy'), pose_xyz[:, :m_length[i]].cpu().numpy())
 				np.save(os.path.join(out_dir, name[i]+'_pred.npy'), pred_xyz.detach().cpu().numpy())
 
-			pred_pose_eval[i:i+1,:m_length[i],:] = pred_pose
+			pred_pose_eval[i:i+1,:m_length[i],:] = pred_denorm
 
 			if i < min(4, bs):
 				draw_org.append(pose_xyz)
@@ -167,7 +174,7 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
 
 
 @torch.no_grad()        
-def evaluation_vqvae_loss(out_dir, val_loader, net, nb_iter,eval_wrapper,loss_fnc,commit_w = 0.02,loss_vel_w = 0.5,best_fid=1000, best_iter=0, best_div=100, best_top1=0, best_top2=0, best_top3=0, best_matching=100,save = False) : 
+def evaluation_vqvae_loss(val_loader, net, nb_iter,eval_wrapper,loss_fnc,commit_w = 0.02,loss_vel_w = 0.5,best_fid=1000, best_iter=0, best_div=100, best_top1=0, best_top2=0, best_top3=0, best_matching=100,save = False) : 
 	net.eval()
 	nb_sample = 0
 	motion_annotation_list = []
@@ -184,6 +191,8 @@ def evaluation_vqvae_loss(out_dir, val_loader, net, nb_iter,eval_wrapper,loss_fn
 	for batch in tqdm(val_loader ,position=0, leave=True ):
 		word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, token, name = batch
 		motion = motion.to(torch.float32)
+		denorm = val_loader.dataset.inv_transform(motion.detach().cpu())
+
 		max_len = max(m_length)
 		mask = []
 		for n in m_length:
@@ -193,11 +202,14 @@ def evaluation_vqvae_loss(out_dir, val_loader, net, nb_iter,eval_wrapper,loss_fn
 
 
 		motion = motion.cuda()
-		et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, motion, m_length)
+		et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, denorm, m_length)
 		bs, seq = motion.shape[0], motion.shape[1]
 
 		pred_pose, ind, commit_loss = net(motion)
-		et_pred, em_pred = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, (pred_pose).detach().cpu(), m_length)
+		pred_pose = pred_pose.cpu()*mask[...,None]
+		pred_denorm = val_loader.dataset.inv_transform(pred_pose.detach().cpu())
+
+		et_pred, em_pred = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, pred_denorm, m_length)
 
 		motion_pred_list.append(em_pred)
 		motion_annotation_list.append(em)
@@ -211,22 +223,22 @@ def evaluation_vqvae_loss(out_dir, val_loader, net, nb_iter,eval_wrapper,loss_fn
 
 		nb_sample += bs
 
-		loss_motion = loss_fnc(pred_pose, motion,mask)
-		loss_vel = loss_fnc.forward_vel(pred_pose, motion,mask)
+		# loss_motion = loss_fnc(pred_pose.detach().cpu(), motion.detach().cpu(),mask)
+		# loss_vel = loss_fnc.forward_vel(pred_pose.detach().cpu(), motion.detach().cpu(),mask)
 
-		loss = loss_motion + commit_w * commit_loss + loss_vel_w * loss_vel
+		# loss = loss_motion + commit_w * commit_loss + loss_vel_w * loss_vel
 
-		loss_dict = {
-		"total_loss": loss,
-		"loss_motion":loss_motion,
-		"loss_vel": loss_vel,
-		"commit_loss" :commit_loss
-		}	
-		val_loss_ae.update(loss_dict)
+		# loss_dict = {
+		# "total_loss": loss,
+		# "loss_motion":loss_motion,
+		# "loss_vel": loss_vel,
+		# "commit_loss" :commit_loss
+		# }	
+		# val_loss_ae.update(loss_dict)
 
-		sums_ae = dict(Counter(val_loss_ae) + Counter(loss_dict))
-		means_ae = {k: sums_ae[k] / float((k in val_loss_ae) + (k in loss_dict)) for k in sums_ae}
-		val_loss_ae.update(means_ae)
+		# sums_ae = dict(Counter(val_loss_ae) + Counter(loss_dict))
+		# means_ae = {k: sums_ae[k] / float((k in val_loss_ae) + (k in loss_dict)) for k in sums_ae}
+		# val_loss_ae.update(means_ae)
 
 	motion_annotation_np = torch.cat(motion_annotation_list, dim=0).cpu().numpy()
 	motion_pred_np = torch.cat(motion_pred_list, dim=0).cpu().numpy()
@@ -247,14 +259,14 @@ def evaluation_vqvae_loss(out_dir, val_loader, net, nb_iter,eval_wrapper,loss_fn
 	msg = f"--> \t Eva. Iter {nb_iter} :, FID. {fid:.4f}, Diversity Real. {diversity_real:.4f}, Diversity. {diversity:.4f}, R_precision_real. {R_precision_real}, R_precision. {R_precision}, matching_score_real. {matching_score_real}, matching_score_pred. {matching_score_pred}"
 	
 	print(msg)
-	print(f"val/total_loss " ,val_loss_ae["total_loss"], )
-	print("val/rec_loss" ,val_loss_ae["loss_motion"], )
-	print("val/commit_loss" ,val_loss_ae["commit_loss"], )
-	print("val/vel_loss" ,val_loss_ae["loss_vel"], )
+	# print(f"val/total_loss " ,val_loss_ae["total_loss"], )
+	# print("val/rec_loss" ,val_loss_ae["loss_motion"], )
+	# print("val/commit_loss" ,val_loss_ae["commit_loss"], )
+	# print("val/vel_loss" ,val_loss_ae["loss_vel"], )
 
 
 	net.train()
-	return best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_ae
+	return best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching
 
 
 @torch.no_grad()        

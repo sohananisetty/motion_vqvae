@@ -23,7 +23,7 @@ from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLen
 from tqdm import tqdm
 from collections import Counter
 import visualize.plot_3d_global as plot_3d
-
+from core.datasets import dataset_TM_eval
 from core.models.vqvae import VQMotionModel
 from core.models.loss import ReConsLoss
 from utils.motion_process import recover_from_ric
@@ -116,11 +116,6 @@ class VQVAEMotionTrainer(nn.Module):
 
 		total = sum(p.numel() for p in self.vqvae_model.parameters() if p.requires_grad)
 		print("Total training params: %.2fM" % (total / 1e6))
-
-
-
-		self.args.nb_joints = 22 if self.dataset_name == "t2m" else 21
-
 		
 		self.num_train_steps = self.training_args.num_train_iters
 		self.grad_accum_every = self.training_args.gradient_accumulation_steps
@@ -137,6 +132,9 @@ class VQVAEMotionTrainer(nn.Module):
 		)
 
 		self.max_grad_norm = max_grad_norm
+		# self.w_vectorizer = W ordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
+		# self.eval_wrapper = EvaluatorModelWrapper(eval_args)
+		self.best_fid = float("-inf")
 
 		if self.enable_var_len:
 			train_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder)
@@ -148,7 +146,7 @@ class VQVAEMotionTrainer(nn.Module):
 			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_motion_length = self.args.max_seq_length)
 			self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_motion_length = self.args.max_seq_length)
 
-		self.print(f'training with training and valid dataset of {len(train_ds)} and {len(valid_ds)} samples and test of  {len(self.render_ds)}')
+		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)}samples and test of  {len(self.render_ds)}')
 
 		# dataloader
 		collate_fn = MotionCollator(self.args.max_seq_length) if self.enable_var_len else None
@@ -158,6 +156,7 @@ class VQVAEMotionTrainer(nn.Module):
 		self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
 		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=collate_fn)
 		self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
+		# self.valid_dl = dataset_TM_eval.DATALoader(self.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
 
 		# prepare with accelerator
 
@@ -189,9 +188,6 @@ class VQVAEMotionTrainer(nn.Module):
 		self.apply_grad_penalty_every = apply_grad_penalty_every
 
 
-		self.w_vectorizer = WordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
-		self.eval_wrapper = EvaluatorModelWrapper(eval_args.eval_model)
-		self.best_fid = float("-inf")
 
 
 		hps = {"num_train_steps": self.num_train_steps, "max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
@@ -341,14 +337,14 @@ class VQVAEMotionTrainer(nn.Module):
 		
 
 		if self.is_main and (steps % self.evaluate_every == 0):
-			# self.validation_step()
-			best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_dict = evaluation_vqvae_loss(
-				val_loader = self.valid_dl, 
-				net= self.vqvae_model,
-				nb_iter= steps, 
-				eval_wrapper = self.eval_wrapper,
-				loss_fnc = self.loss_fnc,
-				)
+			self.validation_step()
+			# best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_dict = evaluation_vqvae_loss(
+			# 	val_loader = self.valid_dl, 
+			# 	net= self.vqvae_model,
+			# 	nb_iter= steps, 
+			# 	eval_wrapper = self.eval_wrapper,
+			# 	loss_fnc = self.loss_fnc,
+			# 	)
 			
 			self.sample_render(os.path.join(self.output_dir , "samples"))
 			
@@ -461,10 +457,10 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 		if resume:
-			save_path = os.path.join(self.output_dir)
-			#chk = sorted(os.listdir(save_path) , key = lambda x: int(x.split('.')[1]))[-1]
-			print("resuming from ", os.path.join(self.output_dir, f'vqvae_motion.pt'))
-			self.load(os.path.join(save_path , "vqvae_motion.pt"))
+			save_path = os.path.join(self.output_dir , "checkpoints")
+			chk = sorted(os.listdir(save_path) , key = lambda x: int(x.split('.')[1]))[-1]
+			print("resuming from ", os.path.join(self.output_dir, f'{chk}'))
+			self.load(os.path.join(save_path , f"{chk}"))
 
 		while self.steps < self.num_train_steps:
 			logs = self.train_step()
