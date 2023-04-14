@@ -37,6 +37,18 @@ class Text2MotionDataset(data.Dataset):
             dim_pose = 263
             kinematic_chain = paramUtil.t2m_kinematic_chain
             self.meta_dir = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D"
+
+        if dataset_name == 'aist':
+            self.data_root = "/srv/scratch/sanisetty3/music_motion/AIST"
+            self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
+            self.text_dir = pjoin(self.data_root, 'texts')
+            self.joints_num = 22
+            radius = 4
+            fps = 20
+            self.max_motion_length = 196
+            dim_pose = 263
+            kinematic_chain = paramUtil.t2m_kinematic_chain
+            self.meta_dir = "/srv/scratch/sanisetty3/music_motion/AIST"
             
             # '/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta'
         elif dataset_name == 'kit':
@@ -59,7 +71,7 @@ class Text2MotionDataset(data.Dataset):
         else:
             split_file = pjoin(self.data_root, 'val.txt')
 
-        min_motion_len = 40 if self.dataset_name =='t2m' else 24
+        min_motion_len = 40 if self.dataset_name in ["t2m" , "aist"] else 24
         # min_motion_len = 64
 
         joints_num = self.joints_num
@@ -75,7 +87,7 @@ class Text2MotionDataset(data.Dataset):
         for name in tqdm(id_list):
             try:
                 motion = np.load(pjoin(self.motion_dir, name + '.npy'))
-                if (len(motion)) < min_motion_len or (len(motion) >= 200):
+                if (len(motion)) < min_motion_len:
                     continue
                 text_data = []
                 flag = False

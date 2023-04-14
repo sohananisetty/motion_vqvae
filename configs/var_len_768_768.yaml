@@ -1,5 +1,5 @@
 vqvae_model_name: "vqvae_motion_vl"
-output_dir: 
+output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768"
 dataset:
   dataset_name: "t2m"
   var_len: True
@@ -30,8 +30,8 @@ vqvae:
   commit : 0.02
   loss_vel : 0.5
   recons_loss : "l1_smooth"
-  max_seq_length : 200
-  min_seq_length : 20
+  max_length_seconds : 10
+  max_length_seconds : 3
 
   
   

@@ -98,8 +98,11 @@ if __name__ == '__main__':
     # ])
 
     cfg = get_cfg_defaults()
-    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/configs/var_len_768_768.yaml")
+    print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/configs/var_len_768_768_aist.yaml")
+    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/configs/var_len_768_768_aist.yaml")
     cfg.freeze()
+    print("output_dir: ", cfg.output_dir , cfg.train.output_dir)
+
     
     main()
 

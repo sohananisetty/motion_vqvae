@@ -70,10 +70,10 @@ def has_duplicates(tup):
 
 # main trainer class
 
-class VQVAEMotionTrainer(nn.Module):
+class RegressorMotionTrainer(nn.Module):
 	def __init__(
 		self,
-		vqvae_model: VQMotionModel,
+		trans_model: VQMotionModel,
 		args,
 		training_args,
 		dataset_args,
@@ -113,25 +113,25 @@ class VQVAEMotionTrainer(nn.Module):
 		
 
 		self.register_buffer('steps', torch.Tensor([0]))
-		self.vqvae_model = vqvae_model
-		total = sum(p.numel() for p in self.vqvae_model.parameters() if p.requires_grad)
+		self.trans_model = trans_model
+		total = sum(p.numel() for p in self.trans_model.parameters() if p.requires_grad)
 		print("Total training params: %.2fM" % (total / 1e6))
 
 		if args.freeze_model:
 			print("freezing encoder and decoder")
-			for name, param in self.vqvae_model.motionEncoder.named_parameters():
+			for name, param in self.trans_model.motionEncoder.named_parameters():
 				param.requires_grad = False
-			for name, param in self.vqvae_model.motionDecoder.named_parameters():
+			for name, param in self.trans_model.motionDecoder.named_parameters():
 				param.requires_grad = False
 
-		total = sum(p.numel() for p in self.vqvae_model.parameters() if p.requires_grad)
+		total = sum(p.numel() for p in self.trans_model.parameters() if p.requires_grad)
 		print("Total training params: %.2fM" % (total / 1e6))
 		
 		self.grad_accum_every = self.training_args.gradient_accumulation_steps
 
 		self.loss_fnc = ReConsLoss(self.args.recons_loss, self.args.nb_joints)
 
-		self.optim = get_optimizer(self.vqvae_model.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
+		self.optim = get_optimizer(self.trans_model.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
 		
 		self.lr_scheduler = get_scheduler(
 			name = self.training_args.lr_scheduler_type,
@@ -170,14 +170,14 @@ class VQVAEMotionTrainer(nn.Module):
 		# prepare with accelerator
 
 		(
-			self.vqvae_model,
+			self.trans_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
 			self.render_dl
 
 		) = self.accelerator.prepare(
-			self.vqvae_model,
+			self.trans_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
@@ -230,7 +230,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 	def save(self, path):
 		pkg = dict(
-			model = self.accelerator.get_state_dict(self.vqvae_model),
+			model = self.accelerator.get_state_dict(self.trans_model),
 			optim = self.optim.state_dict(),
 			steps = self.steps,
 			total_loss = self.best_loss,
@@ -238,15 +238,15 @@ class VQVAEMotionTrainer(nn.Module):
 		torch.save(pkg, path)
 
 	@property
-	def unwrapped_vqvae_model(self):
-		return self.accelerator.unwrap_model(self.vqvae_model)
+	def unwrapped_trans_model(self):
+		return self.accelerator.unwrap_model(self.trans_model)
 
 	def load(self, path):
 		path = Path(path)
 		assert path.exists()
 		pkg = torch.load(str(path), map_location = 'cpu')
 
-		self.unwrapped_vqvae_model.load_state_dict(pkg['model'])
+		self.unwrapped_trans_model.load_state_dict(pkg['model'])
 
 		self.optim.load_state_dict(pkg['optim'])
 		self.steps = pkg["steps"]
@@ -274,7 +274,7 @@ class VQVAEMotionTrainer(nn.Module):
 		apply_grad_penalty = self.apply_grad_penalty_every > 0 and not (steps % self.apply_grad_penalty_every)
 		log_losses = self.log_losses_every > 0 and not (steps % self.log_losses_every)
 
-		self.vqvae_model.train()
+		self.trans_model.train()
 
 		# logs
 
@@ -288,7 +288,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 			if self.enable_var_len is False:
 
-				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion)				
+				pred_motion , indices, commit_loss = self.trans_model(gt_motion)				
 				loss_motion = self.loss_fnc(pred_motion, gt_motion)
 				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion)
 				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
@@ -297,7 +297,7 @@ class VQVAEMotionTrainer(nn.Module):
 				mask = batch["motion_mask"]
 				lengths = batch["motion_lengths"]
 
-				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion , mask)				
+				pred_motion , indices, commit_loss = self.trans_model(gt_motion , mask)				
 				loss_motion = self.loss_fnc(pred_motion, gt_motion , mask)
 				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion , mask)
 				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
@@ -318,7 +318,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 	
 		if exists(self.max_grad_norm):
-			self.accelerator.clip_grad_norm_(self.vqvae_model.parameters(), self.max_grad_norm)
+			self.accelerator.clip_grad_norm_(self.trans_model.parameters(), self.max_grad_norm)
 
 		self.optim.step()
 		self.lr_scheduler.step()
@@ -352,7 +352,7 @@ class VQVAEMotionTrainer(nn.Module):
 			self.validation_step()
 			# best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_dict = evaluation_vqvae_loss(
 			# 	val_loader = self.valid_dl, 
-			# 	net= self.vqvae_model,
+			# 	net= self.trans_model,
 			# 	nb_iter= steps, 
 			# 	eval_wrapper = self.eval_wrapper,
 			# 	loss_fnc = self.loss_fnc,
@@ -382,7 +382,7 @@ class VQVAEMotionTrainer(nn.Module):
 	
 
 	def validation_step(self):
-		self.vqvae_model.eval()
+		self.trans_model.eval()
 		val_loss_ae = {}
 		all_loss = 0.
 
@@ -395,7 +395,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 				gt_motion = batch["motion"]
 
-				pred_motion , indices, commit_loss = self.vqvae_model(gt_motion)
+				pred_motion , indices, commit_loss = self.trans_model(gt_motion)
 				loss_motion = self.loss_fnc(pred_motion, gt_motion)
 				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion)
 
@@ -422,7 +422,7 @@ class VQVAEMotionTrainer(nn.Module):
 		print("val/rec_loss" ,val_loss_ae["loss_motion"], )
 		print(f"val/total_loss " ,val_loss_ae["total_loss"], )
 
-		self.vqvae_model.train()
+		self.trans_model.train()
 	
 	def sample_render(self , save_path):
 
@@ -432,7 +432,7 @@ class VQVAEMotionTrainer(nn.Module):
 		
 		# assert self.render_dl.batch_size == 1 , "Batch size for rendering should be 1!"
 
-		self.vqvae_model.eval()
+		self.trans_model.eval()
 		print(f"render start")
 		with torch.no_grad():
 			for batch in tqdm(self.render_dl):
@@ -445,7 +445,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 				gt_motion = gt_motion[:,:motion_len,:]
 
-				pred_motion , _, _ = self.vqvae_model(gt_motion)
+				pred_motion , _, _ = self.trans_model(gt_motion)
 
 				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
 				gt_motion_xyz = gt_motion_xyz.reshape(gt_motion.shape[0],-1, 22, 3)
@@ -461,7 +461,7 @@ class VQVAEMotionTrainer(nn.Module):
 				# render(pred_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=True)
 				# render(gt_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=False)
 
-		self.vqvae_model.train()
+		self.trans_model.train()
 
 
 	def train(self, resume = False, log_fn = noop):

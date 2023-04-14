@@ -18,7 +18,7 @@ cfg.device = 'cuda'
 cfg.vqvae_model_name = "vqvae"
 
 cfg.pretrained_modelpath = os.path.join(cfg.abs_dir, f"checkpoints/{cfg.vqvae_model_name}/vqvae_motion.pt")
-cfg.output_dir = os.path.join(cfg.abs_dir , "checkpoints/var_len/vq_768_768")
+cfg.output_dir = os.path.join(cfg.abs_dir , "checkpoints/")
 
 cfg.eval_output_dir = os.path.join(cfg.abs_dir , "eval/")
 
@@ -28,8 +28,8 @@ cfg.eval_model_path = os.path.join(cfg.abs_dir , f"checkpoints/{cfg.vqvae_model_
 cfg.dataset = CN()
 cfg.dataset.dataset_name = "t2m" #"t2m or kit or aist"
 cfg.dataset.var_len = False
-cfg.dataset.data_folder =  "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D"
-
+cfg.dataset.data_folder =  "/srv/scratch/sanisetty3/music_motion/"
+cfg.dataset.fps = 20
 
 
 
@@ -37,14 +37,14 @@ cfg.train = CN()
 cfg.train.resume = True
 cfg.train.seed = 42
 cfg.train.fp16 = True
-cfg.train.output_dir = cfg.output_dir
-
+cfg.train.output_dir = os.path.join(cfg.abs_dir , "checkpoints/")
+cfg.train.num_stages = 6
 cfg.train.num_train_iters = 500000 #'Number of training steps
 cfg.train.save_steps = 5000
 cfg.train.logging_steps = 10
 cfg.train.wandb_every = 100
 cfg.train.evaluate_every = 5000
-cfg.train.eval_bs = 24
+cfg.train.eval_bs = 20
 cfg.train.train_bs = 24
 cfg.train.gradient_accumulation_steps = 4
 
@@ -68,13 +68,18 @@ cfg.vqvae.depth = 12
 cfg.vqvae.heads=8
 cfg.vqvae.codebook_dim = 768
 cfg.vqvae.codebook_size = 1024
-
+cfg.vqvae.freeze_model = False
 ## Loss
 cfg.vqvae.commit = 0.02  #"hyper-parameter for the commitment loss"
 cfg.vqvae.loss_vel = 0.5
 cfg.vqvae.recons_loss = "l1_smooth" #l1_smooth , l1 , l2
-cfg.vqvae.max_seq_length = 200
-cfg.vqvae.min_seq_length = 20
+cfg.vqvae.window_size = 64
+cfg.vqvae.max_length_seconds = 10
+cfg.vqvae.min_length_seconds = 3
+cfg.vqvae.max_seq_length = cfg.vqvae.max_length_seconds*cfg.dataset.fps
+
+cfg.motion_trans = CN()
+cfg.motion_trans.music_dim = 128
 
 
 cfg.eval_model = CN()
