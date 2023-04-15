@@ -20,7 +20,6 @@ class MotionTransformer(nn.Module):
 	def __init__(
 		self,
 		*,
-		num_tokens,
 		max_seq_len,
 		attn_layers,
 		emb_dim = None,
@@ -69,7 +68,7 @@ class MotionTransformer(nn.Module):
 		self.norm = nn.LayerNorm(dim)
 
 		self.init_()
-		logits_dim = default(logits_dim, num_tokens)
+		
 		if exists(logits_dim):
 			self.to_logits = nn.Linear(dim, logits_dim)
 
@@ -160,6 +159,7 @@ class MotionTransformer(nn.Module):
 
 		return out
 	
+
 class MotionDecoder(nn.Module):
 
 
@@ -179,6 +179,10 @@ class MotionDecoder(nn.Module):
 
 		return logits
 	
+
+
+
+
 class VQMotionModel(nn.Module):
 	"""Audio Motion VQGAN model."""
 
@@ -244,7 +248,6 @@ class VQMotionModel(nn.Module):
 		Args:
 			inputs: Input dict of tensors. The dict should contains 
 			`motion_input` ([batch_size, motion_seq_length, motion_feature_dimension])
-			`mask` ([batch_size, motion_seq_length])
 
 		Returns:
 			Final output after the cross modal transformer. A tensor with shape 

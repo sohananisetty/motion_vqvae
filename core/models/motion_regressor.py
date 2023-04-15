@@ -7,8 +7,7 @@ from x_transformers.x_transformers import AttentionLayers, Encoder, Decoder, exi
 from vector_quantize_pytorch import ResidualVQ, VectorQuantize
 from einops import rearrange, reduce, pack, unpack
 from core.quantization.core_vq import VectorQuantization
-
-
+from tqdm import tqdm
 
 
 
@@ -73,6 +72,7 @@ class MotionTokenTransformer(nn.Module):
 		use_abs_pos_emb = True,
 		scaled_sinu_pos_emb = False,
 		l2norm_embed = False,
+		pad_idx = 1,
 		emb_frac_gradient = 1. # GLM-130B and Cogview successfully used this, set at 0.1
 		):
 		super().__init__()
@@ -89,7 +89,7 @@ class MotionTokenTransformer(nn.Module):
 
 		self.l2norm_embed = l2norm_embed
 		
-		self.token_emb = TokenEmbedding(emb_dim, num_tokens, l2norm_embed = l2norm_embed)
+		self.token_emb = TokenEmbedding(emb_dim, num_tokens, l2norm_embed = l2norm_embed , pad_idx=pad_idx)
 
 		if not (use_abs_pos_emb and not attn_layers.has_pos_emb):
 			self.pos_emb = always(0)
@@ -231,17 +231,20 @@ class MotionRegressorModel(nn.Module):
 		super(MotionRegressorModel , self).__init__()
 
 		self.device = device
-		self.pad_value = pad_value
+		self.pad_index = pad_value
 		self.ignore_index = ignore_index
+		self.args = args
+		self.max_seq_len = args.max_seq_length
+
 
 
 
 		self.motionDecoder = MotionTokenTransformer(
-		max_seq_len = args.max_seq_len,
+		max_seq_len = args.max_seq_length,
 		num_tokens = args.num_tokens,
 		cond_dim  =args.music_dim,
 		scaled_sinu_pos_emb = True,
-		token_emb_type = "token",
+		pad_idx=self.pad_index,
 		attn_layers = Decoder(
 			cross_attend = True,
 			dim = args.dec_dim,
@@ -283,7 +286,10 @@ class MotionRegressorModel(nn.Module):
 		filter_thres = 0.9,
 		min_p_pow = 2.0,
 		min_p_ratio = 0.02,
-		**kwargs
+		context = None,
+		context_mask = None,
+
+		# **kwargs
 	):
 		num_dims = len(start_tokens.shape)
 
@@ -297,10 +303,10 @@ class MotionRegressorModel(nn.Module):
 
 		out = start_tokens
 
-		for _ in range(seq_len):
+		for _ in tqdm(range(seq_len)):
 			x = out[:, -self.max_seq_len:]
 
-			logits = self.forward(x, **kwargs)[:, -1]
+			logits = self.forward(motion = x, context = context , context_mask = context_mask)[:, -1]
 
 			if filter_logits_fn in {top_k, top_p}:
 				filtered_logits = filter_logits_fn(logits, thres = filter_thres)
@@ -332,7 +338,7 @@ class MotionRegressorModel(nn.Module):
 		self.train(was_training)
 		return out
 
-	def forward(self, motion , mask = None , context = None , context_mask = None):
+	def forward(self, motion , mask = None , context = None,context_mask = None):
 		"""Predict sequences from inputs. 
 
 		This is a single forward pass that been used during training. 
@@ -348,149 +354,29 @@ class MotionRegressorModel(nn.Module):
 			Final output after the transformer. A tensor with shape 
 			[batch_size, motion_seq_length, num_tokens]
 		"""
+
+		b , t  = motion.shape
+
+		# if self.training:
+		# 	inp, targets = motion[:, :-1], motion[:, 1:]
 		
 		
-		logits = self.self.motionDecoder(x = motion, mask = mask , context = context , context_mask = context_mask)
 
-		
-
-		return logits
-
-
-	def encode(self, motion_input , mask = None):
-
-		with torch.no_grad():
-			embed_motion_features = self.motionEncoder(motion_input,mask = mask)
-			indices = self.vq.encode(embed_motion_features)
-			return indices
-
-	def decode(self, indices):
-
-		with torch.no_grad():
-			quantized = self.vq.decode(indices)
-			out_motion = self.motionDecoder(quantized)
-			return quantized, out_motion
-
-
-
-
-	# def decode(self, indices):
-	# 	all_codes =  self.rq.get_codes_from_indices(indices)
-	# 	quantized_enc_motion = torch.sum(all_codes,0)
-	# 	decoded_motion_features = self.motionDecoder(quantized_enc_motion)
-	# 	return decoded_motion_features
-
-	# def decode_from_codebook_indices(self, quantized_indices):
-	# 		## quantized_indices batch,seq,quantize_dim
-	# 		codes = self.rq.get_codes_from_indices(quantized_indices)
-	# 		x = reduce(codes, 'q ... -> ...', 'sum')
-	# 		# x = rearrange(x, 'b n c -> b c n')
-	# 		return codes , self.motionDecoder(x)
-	
-	
-
-
-class AutoregressiveWrapper(nn.Module):
-	def __init__(
-		self,
-		net,
-		ignore_index = -100,
-		pad_value = 0,
-		mask_prob = 0.
-	):
-		super().__init__()
-		self.pad_value = pad_value
-		self.ignore_index = ignore_index
-
-		self.net = net
-		self.max_seq_len = net.max_seq_len
-
-		# paper shows masking (MLM) in conjunction with autoregressive decoder-only training leads to big improvements https://arxiv.org/abs/2210.13432
-		assert mask_prob < 1.
-		self.mask_prob = mask_prob
-
-	@torch.no_grad()
-	def generate(
-		self,
-		start_tokens,
-		seq_len,
-		eos_token = None,
-		temperature = 1.,
-		filter_logits_fn = top_k,
-		filter_thres = 0.9,
-		min_p_pow = 2.0,
-		min_p_ratio = 0.02,
-		**kwargs
-	):
-		device = start_tokens.device
-		num_dims = len(start_tokens.shape)
-
-		if num_dims == 1:
-			start_tokens = start_tokens[None, :]
-
-		b, t = start_tokens.shape
-
-		was_training = self.net.training
-		self.net.eval()
-
-		out = start_tokens
-
-		for _ in range(seq_len):
-			x = out[:, -self.max_seq_len:]
-
-			logits = self.net(x, **kwargs)[:, -1]
-
-			if filter_logits_fn in {top_k, top_p}:
-				filtered_logits = filter_logits_fn(logits, thres = filter_thres)
-				probs = F.softmax(filtered_logits / temperature, dim=-1)
-
-			elif filter_logits_fn is top_a:
-				filtered_logits = filter_logits_fn(logits, min_p_pow = min_p_pow, min_p_ratio= min_p_ratio)
-				probs = F.softmax(filtered_logits / temperature, dim=-1)
-
-			sample = torch.multinomial(probs, 1)
-
-			out = torch.cat((out, sample), dim=-1)
-
-			if exists(eos_token):
-				is_eos_tokens = (out == eos_token)
-
-				if is_eos_tokens.any(dim = -1).all():
-					# mask out everything after the eos tokens
-					shifted_is_eos_tokens = F.pad(is_eos_tokens, (1, -1))
-					mask = shifted_is_eos_tokens.float().cumsum(dim = -1) >= 1
-					out = out.masked_fill(mask, self.pad_value)
-					break
-
-		out = out[:, t:]
-
-		if num_dims == 1:
-			out = out.squeeze(0)
-
-		self.net.train(was_training)
-		return out
-
-	def forward(self, x, **kwargs):
-		seq, ignore_index = x.shape[1], self.ignore_index
-
-		inp, target = x[:, :-1], x[:, 1:]
-
-		if self.mask_prob > 0.:
-			rand = torch.randn(inp.shape, device = x.device)
+		if self.mask_prob > 0. and self.training:
+			rand = torch.randn(motion.shape)
 			rand[:, 0] = -torch.finfo(rand.dtype).max # first token should not be masked out
-			num_mask = min(int(seq * self.mask_prob), seq - 1)
+			num_mask = min(int(t * self.mask_prob), t - 1)
 			indices = rand.topk(num_mask, dim = -1).indices
-			mask = ~torch.zeros_like(inp).scatter(1, indices, 1.).bool()
-			kwargs.update(self_attn_context_mask = mask)
+			token_mask = ~torch.zeros_like(motion).scatter(1, indices, 1.).bool()
+			mask = mask*token_mask
 
-		out = self.net(inp, **kwargs)
+		logits = self.motionDecoder(x = motion, mask = mask , context = context , context_mask = context_mask)
 
-		out = out.transpose(1, 2)
+		# print(logits.shape)
 
-		loss = F.cross_entropy(
-			out,
-			target,
-			ignore_index = ignore_index
-		)
 
-		return loss
+		# loss = F.cross_entropy(logits.contiguous().view(-1, logits.shape[-1]), targets.contiguous().view(-1),
+        #     ignore_index=self.pad_index, reduction='mean')
+        
+		
+		return logits

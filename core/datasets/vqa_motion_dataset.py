@@ -62,6 +62,7 @@ class MotionCollatorConditional():
 
         pad_batch_inputs = []
         pad_batch_mask = []
+        condition_batch_masks = []
         motion_lengths = []
         condition_list = []
         names = []
@@ -69,20 +70,35 @@ class MotionCollatorConditional():
 
 
         for inp,name,condition in samples:
-            n,d = inp.shape
+            n = inp.shape[0]
             diff = max_len - n
-            mask = torch.BoolTensor([1]*n + [0]*diff)
-            padded = torch.concatenate((torch.tensor(inp) , torch.ones((diff,d))*self.pad))
+            mask = torch.BoolTensor([1]*(n+2) + [0]*diff)
+            padded = torch.concatenate(
+                (self.bos,
+                 torch.LongTensor(inp) , 
+                 self.eos,
+                 torch.ones((diff) , dtype = torch.long)*self.pad ) 
+                 )
             pad_batch_inputs.append(padded)
             pad_batch_mask.append(mask)
             motion_lengths.append(n)
             names.append(name)
             if self.dataset_name == "aist":
-                music_encodding = condition
-                condition_padded = torch.concatenate((torch.tensor(music_encodding) , torch.ones((diff,condition.shape[-1]))*self.pad))
+                music_encoding = condition
+                condition_padded = torch.concatenate(
+                    (torch.ones((1,condition.shape[-1]))*self.bos,
+                     torch.tensor(music_encoding) ,
+                     torch.ones((1,condition.shape[-1]))*self.eos,
+                     torch.ones((diff,condition.shape[-1]))*self.pad,
+                     
+                     ))
+                c_mask = torch.BoolTensor([0]+[1]*(n)+ [0] + [0]*diff)
                 condition_list.append(condition_padded)
+                condition_batch_masks.append(c_mask)
             else:
                 condition_list.append(condition)
+                condition_batch_masks.append(mask)
+
 
         if self.dataset_name in ["t2m" , "kit"]:
             text = clip.tokenize(condition_list, truncate=True).cuda()
@@ -98,6 +114,7 @@ class MotionCollatorConditional():
             "motion_mask" : torch.stack(pad_batch_mask , 0),
             "names" : np.array(names),
             "condition" : condition_embeddings,
+            "condition_mask" : torch.stack(condition_batch_masks , 0),
 
         }
 
@@ -323,7 +340,7 @@ class VQVarLenMotionDataset(data.Dataset):
 
     
 class VQVarLenMotionDatasetConditional(data.Dataset):
-    def __init__(self, dataset_name, data_root, datafolder = "new_joint_vecs" ,w_vectorizer = None, max_length_seconds = 60, min_length_seconds = 3, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
+    def __init__(self, dataset_name, data_root, var_len = False , datafolder = "joint_indices" ,w_vectorizer = None, max_length_seconds = 60, min_length_seconds = 3, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
         self.fps = fps
         self.min_length_seconds = min_length_seconds
         self.max_length_seconds = max_length_seconds
@@ -464,11 +481,6 @@ class VQVarLenMotionDatasetConditional(data.Dataset):
         self.name_list = new_name_list
         print("Total number of motions {}".format(len(self.data_dict)))
 
-      
-
-    def inv_transform(self, data):
-        return data * self.std + self.mean
-    
     def set_stage(self, stage):
 
         lengths = list(np.array(np.logspace(np.log(self.min_motion_length), np.log(self.fps*self.max_length_seconds), 10, base=np.exp(1)) + 1 , dtype = np.uint))
@@ -504,22 +516,6 @@ class VQVarLenMotionDatasetConditional(data.Dataset):
 
     #     return word_embeddings, pos_one_hots, caption, sent_len
 
-    # def get_random_motion(self , motion_len):
-
-    #     data = self.data_dict[self.name_list[item]]
-    #     motion, motion_len, text_list = data['motion'], data['length'], data['text']
-
-
-
-    #     try:
-    #         self.window_size = np.random.randint(self.min_motion_length , min(motion_len , self.max_motion_length))
-    #     except:
-    #         self.window_size = self.min_motion_length
-
-        
-    #     idx = random.randint(0, len(motion) - self.window_size)
-
-
 
     def __getitem__(self, item):
 
@@ -554,18 +550,8 @@ class VQVarLenMotionDatasetConditional(data.Dataset):
 
         if self.dataset_name == "aist":
             condition = (condition[idx:idx+self.window_size])
-            # if self.bert_style:
-
-            #     conditions.append(condition[idx:idx+self.window_size])
-
-            
 
 
-
-        "Z Normalization"
-        motion = (motion - self.mean) / self.std
-
-        
         return motion , self.id_list[item],condition
 
 

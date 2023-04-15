@@ -80,6 +80,14 @@ cfg.vqvae.max_seq_length = cfg.vqvae.max_length_seconds*cfg.dataset.fps
 
 cfg.motion_trans = CN()
 cfg.motion_trans.music_dim = 128
+cfg.motion_trans.num_tokens = cfg.vqvae.codebook_size+3
+
+cfg.motion_trans.max_length_seconds = 30
+cfg.motion_trans.min_length_seconds = 3
+cfg.motion_trans.max_seq_length = cfg.motion_trans.max_length_seconds*cfg.dataset.fps
+cfg.motion_trans.dec_dim = 768 #'Encoder and Decoder dimension'
+cfg.motion_trans.depth = 12
+cfg.motion_trans.heads=8
 
 
 cfg.eval_model = CN()
