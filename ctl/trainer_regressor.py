@@ -19,7 +19,7 @@ import transformers
 
 from core.optimizer import get_optimizer
 from render_final import render
-from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator
+from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator,VQVarLenMotionDatasetConditional, TransMotionDatasetConditional, MotionCollatorConditional
 from tqdm import tqdm
 from collections import Counter
 import visualize.plot_3d_global as plot_3d
@@ -30,6 +30,7 @@ from utils.motion_process import recover_from_ric
 from utils.eval_trans import evaluation_vqvae_loss
 from core.models.evaluator_wrapper import EvaluatorModelWrapper
 from utils.word_vectorizer import WordVectorizer
+from core.models.motion_regressor import MotionRegressorModel,top_k
 
 
 
@@ -73,7 +74,8 @@ def has_duplicates(tup):
 class RegressorMotionTrainer(nn.Module):
 	def __init__(
 		self,
-		trans_model: VQMotionModel,
+		trans_model: MotionRegressorModel,
+		vqvae_model : VQMotionModel,
 		args,
 		training_args,
 		dataset_args,
@@ -105,7 +107,7 @@ class RegressorMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = list(np.linspace(200000,self.num_train_steps, self.num_stages , dtype = np.uint))
+		self.stage_steps = list(np.linspace(0,self.num_train_steps, self.num_stages , dtype = np.uint))
 		print("stage_steps: " , self.stage_steps )
 		self.stage = 0
 
@@ -114,22 +116,16 @@ class RegressorMotionTrainer(nn.Module):
 
 		self.register_buffer('steps', torch.Tensor([0]))
 		self.trans_model = trans_model
+		self.vqvae_model = vqvae_model
 		total = sum(p.numel() for p in self.trans_model.parameters() if p.requires_grad)
 		print("Total training params: %.2fM" % (total / 1e6))
 
-		if args.freeze_model:
-			print("freezing encoder and decoder")
-			for name, param in self.trans_model.motionEncoder.named_parameters():
-				param.requires_grad = False
-			for name, param in self.trans_model.motionDecoder.named_parameters():
-				param.requires_grad = False
-
-		total = sum(p.numel() for p in self.trans_model.parameters() if p.requires_grad)
-		print("Total training params: %.2fM" % (total / 1e6))
+		
+	
 		
 		self.grad_accum_every = self.training_args.gradient_accumulation_steps
 
-		self.loss_fnc = ReConsLoss(self.args.recons_loss, self.args.nb_joints)
+		self.loss_fnc = nn.CrossEntropyLoss(ignore_index=self.training_args.pad_index )
 
 		self.optim = get_optimizer(self.trans_model.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
 		
@@ -146,24 +142,24 @@ class RegressorMotionTrainer(nn.Module):
 		self.best_fid = float("-inf")
 
 		if self.enable_var_len:
-			train_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
-			self.render_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
+			self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 		else:
 
-			train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_length_seconds = self.args.max_length_seconds)
-			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
-			self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_length_seconds = self.args.max_length_seconds)
+			train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", max_length_seconds = self.args.max_length_seconds , window_size=self.args.window_size)
+			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds,window_size=self.args.window_size)
+			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_length_seconds = self.args.max_length_seconds,window_size=self.args.window_size)
 
 		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
 		# dataloader
-		collate_fn = MotionCollator() if self.enable_var_len else None
+		collate_fn = MotionCollatorConditional(dataset_name = self.dataset_args.dataset_name , bos = self.training_args.bos_index, pad = self.training_args.pad_index, eos = self.training_args.eos_index)
 
 		
 
 		self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
-		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=None)
+		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=collate_fn)
 		self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
 		# self.valid_dl = dataset_TM_eval.DATALoader(self.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
 		
@@ -171,6 +167,7 @@ class RegressorMotionTrainer(nn.Module):
 
 		(
 			self.trans_model,
+			self.vqvae_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
@@ -178,6 +175,7 @@ class RegressorMotionTrainer(nn.Module):
 
 		) = self.accelerator.prepare(
 			self.trans_model,
+			self.vqvae_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
@@ -199,12 +197,12 @@ class RegressorMotionTrainer(nn.Module):
 
 
 
-		hps = {"num_train_steps": self.num_train_steps, "max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
+		hps = {"num_train_steps": self.num_train_steps,"window size":self.args.window_size,"max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
 		self.accelerator.init_trackers(f"{self.model_name}", config=hps)    
 
 		if self.is_main:
 			wandb.login()
-			wandb.init(project="vqvae_768_768_vl_aist")
+			wandb.init(project=self.model_name)
 
 		    
 
@@ -251,10 +249,14 @@ class RegressorMotionTrainer(nn.Module):
 		self.optim.load_state_dict(pkg['optim'])
 		self.steps = pkg["steps"]
 		self.best_loss = pkg["total_loss"]
-		# print("Loading at stage" , np.searchsorted(self.stage_steps , int(self.steps.item())) - 1)
-		self.stage = max(np.searchsorted(self.stage_steps , int(self.steps.item())) - 1 , 0)
-		print("starting at step: ", self.steps ,"and stage", self.stage)
-		self.dl.dataset.set_stage(self.stage)
+		
+		if self.enable_var_len:
+			self.stage = max(np.searchsorted(self.stage_steps , int(self.steps.item())) - 1 , 0)
+			print("starting at step: ", self.steps ,"and stage", self.stage)
+			self.dl.dataset.set_stage(self.stage)
+		else:
+			print("starting at step: ", self.steps)
+
 
 
 
@@ -263,12 +265,14 @@ class RegressorMotionTrainer(nn.Module):
 
 		steps = int(self.steps.item())
 
-		if steps in self.stage_steps:
-			# self.stage += 1 
-			self.stage = self.stage_steps.index(steps)
-			# self.stage  = min(self.stage , len(self.stage_steps))
-			print("changing to stage" , self.stage)
-			self.dl.dataset.set_stage(self.stage)
+		if self.enable_var_len:
+
+			if steps in self.stage_steps:
+				# self.stage += 1 
+				self.stage = self.stage_steps.index(steps)
+				# self.stage  = min(self.stage , len(self.stage_steps))
+				print("changing to stage" , self.stage)
+				self.dl.dataset.set_stage(self.stage)
 
 
 		apply_grad_penalty = self.apply_grad_penalty_every > 0 and not (steps % self.apply_grad_penalty_every)
@@ -284,35 +288,20 @@ class RegressorMotionTrainer(nn.Module):
 		for _ in range(self.grad_accum_every):
 			batch = next(self.dl_iter)
 
-			gt_motion = batch["motion"]
 
-			if self.enable_var_len is False:
-
-				pred_motion , indices, commit_loss = self.trans_model(gt_motion)				
-				loss_motion = self.loss_fnc(pred_motion, gt_motion)
-				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion)
-				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
-
-			else:
-				mask = batch["motion_mask"]
-				lengths = batch["motion_lengths"]
-
-				pred_motion , indices, commit_loss = self.trans_model(gt_motion , mask)				
-				loss_motion = self.loss_fnc(pred_motion, gt_motion , mask)
-				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion , mask)
-				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
+			inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
+			lengths = batch["motion_lengths"]
+			logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
+				context = batch["condition"], context_mask = batch["condition_mask"])	
+					
+			loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
 
 
-
-			# print(loss,loss.shape)
 			
 			self.accelerator.backward(loss / self.grad_accum_every)
 
 			accum_log(logs, dict(
 				loss = loss/self.grad_accum_every,
-				loss_motion = loss_motion/ self.grad_accum_every,
-				loss_vel = loss_vel / self.grad_accum_every,
-				commit_loss = commit_loss / self.grad_accum_every,
 				avg_max_length = int(max(lengths)) / self.grad_accum_every
 				))
 
@@ -325,21 +314,15 @@ class RegressorMotionTrainer(nn.Module):
 		self.optim.zero_grad()
 
 
-		# build pretty printed losses
 
-		losses_str = f"{steps}: vqvae model total loss: {logs['loss'].float():.3} reconstruction loss: {logs['loss_motion'].float():.3} loss_vel: {logs['loss_vel'].float():.3} commitment loss: {logs['commit_loss'].float():.3} average max length: {logs['avg_max_length']}"
+		losses_str = f"{steps}: regressor model total loss: {logs['loss'].float():.3} , average max length: {logs['avg_max_length']}"
 
 		if log_losses:
 			self.accelerator.log({
 				"total_loss": logs["loss"],
-				"loss_motion":logs["loss_motion"],
-				"loss_vel": logs["loss_vel"],
-				"commit_loss" :logs["commit_loss"],
 				"average_max_length":logs["avg_max_length"],
-
 			}, step=steps)
 
-		# log
 		if self.is_main and (steps%self.wandb_every == 0):
 			for key , value in logs.items():
 				wandb.log({f'train_loss/{key}': value})           
@@ -350,15 +333,10 @@ class RegressorMotionTrainer(nn.Module):
 
 		if self.is_main and (steps % self.evaluate_every == 0):
 			self.validation_step()
-			# best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_dict = evaluation_vqvae_loss(
-			# 	val_loader = self.valid_dl, 
-			# 	net= self.trans_model,
-			# 	nb_iter= steps, 
-			# 	eval_wrapper = self.eval_wrapper,
-			# 	loss_fnc = self.loss_fnc,
-			# 	)
-			
-			self.sample_render(os.path.join(self.output_dir , "samples"))
+			# print("test generating samples from gt motion")
+			# self.sample_render_generative(os.path.join(self.output_dir , "samples") , seq_len=self.args.window_size, num_start_indices  =-1)
+			print("test generating from <bos>")
+			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=-1, num_start_indices  =1)
 			
 				
 		# save model
@@ -380,11 +358,9 @@ class RegressorMotionTrainer(nn.Module):
 		self.steps += 1
 		return logs
 	
-
 	def validation_step(self):
 		self.trans_model.eval()
 		val_loss_ae = {}
-		all_loss = 0.
 
 		print(f"validation start")
 
@@ -393,19 +369,15 @@ class RegressorMotionTrainer(nn.Module):
 			for batch in tqdm((self.valid_dl), position=0, leave=True):
 
 
-				gt_motion = batch["motion"]
 
-				pred_motion , indices, commit_loss = self.trans_model(gt_motion)
-				loss_motion = self.loss_fnc(pred_motion, gt_motion)
-				loss_vel = self.loss_fnc.forward_vel(pred_motion, gt_motion)
-
-				loss = loss_motion + self.args.commit * commit_loss + self.args.loss_vel * loss_vel
+				inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
+				logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
+					context = batch["condition"], context_mask = batch["condition_mask"])	
+						
+				loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
 
 				loss_dict = {
 				"total_loss": loss,
-				"loss_motion":loss_motion,
-				"loss_vel": loss_vel,
-				"commit_loss" :commit_loss
 				}	
 			   
 				val_loss_ae.update(loss_dict)
@@ -419,12 +391,11 @@ class RegressorMotionTrainer(nn.Module):
 		for key , value in val_loss_ae.items():
 			wandb.log({f'val_loss_vqgan/{key}': value})                
 		
-		print("val/rec_loss" ,val_loss_ae["loss_motion"], )
 		print(f"val/total_loss " ,val_loss_ae["total_loss"], )
 
 		self.trans_model.train()
-	
-	def sample_render(self , save_path):
+
+	def sample_render_generative(self , save_path , seq_len = 100 , num_start_indices = 1):
 
 		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
 		os.makedirs(save_file , exist_ok=True)
@@ -437,15 +408,23 @@ class RegressorMotionTrainer(nn.Module):
 		with torch.no_grad():
 			for batch in tqdm(self.render_dl):
 
+				gt_motion_indices = batch["motion"][:,:-1]
+				if seq_len == -1:
+					seq_len = gt_motion_indices.shape[1]
 
-				gt_motion = batch["motion"]
+
 				name = batch["names"]
+				start_tokens = gt_motion_indices[:,:num_start_indices]
 
-				motion_len = int(batch.get("motion_lengths" , [gt_motion.shape[1]])[0])
+				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"])
+				
+				gt_motion_indices_ = gt_motion_indices[gt_motion_indices<self.training_args.bos_index]
+				gen_motion_indices_ = gen_motion_indices[gen_motion_indices<self.training_args.bos_index]
 
-				gt_motion = gt_motion[:,:motion_len,:]
+				_ , pred_motion = self.vqvae_model.module.decode(gen_motion_indices_.reshape(gt_motion_indices.shape[0],-1))
+				_ , gt_motion = self.vqvae_model.module.decode(gt_motion_indices_.reshape(gt_motion_indices.shape[0],-1))
 
-				pred_motion , _, _ = self.trans_model(gt_motion)
+
 
 				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
 				gt_motion_xyz = gt_motion_xyz.reshape(gt_motion.shape[0],-1, 22, 3)
@@ -462,7 +441,6 @@ class RegressorMotionTrainer(nn.Module):
 				# render(gt_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=False)
 
 		self.trans_model.train()
-
 
 	def train(self, resume = False, log_fn = noop):
 

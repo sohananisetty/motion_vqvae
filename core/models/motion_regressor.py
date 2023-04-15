@@ -232,7 +232,6 @@ class MotionRegressorModel(nn.Module):
 
 		self.device = device
 		self.pad_index = pad_value
-		self.ignore_index = ignore_index
 		self.args = args
 		self.max_seq_len = args.max_seq_length
 
@@ -303,10 +302,12 @@ class MotionRegressorModel(nn.Module):
 
 		out = start_tokens
 
-		for _ in tqdm(range(seq_len)):
+		for sl in tqdm(range(seq_len)):
+
 			x = out[:, -self.max_seq_len:]
 
-			logits = self.forward(motion = x, context = context , context_mask = context_mask)[:, -1]
+			# logits = self.forward(motion = x, context = context[:,:sl] , context_mask = context_mask[:,:sl])[:, -1]
+			logits = self.forward(motion = x, context = context[:,:(sl+1)] , context_mask = context_mask[:,:(sl+1)])[:, -1]
 
 			if filter_logits_fn in {top_k, top_p}:
 				filtered_logits = filter_logits_fn(logits, thres = filter_thres)
@@ -345,8 +346,8 @@ class MotionRegressorModel(nn.Module):
 
 		Args:
 			inputs: Input dict of tensors. The dict should contains 
-			`motion_input` ([batch_size, motion_seq_length])
-			`mask` ([batch_size, motion_seq_length])
+			`motion_input` ([batch_size, motion_seq_length-1])
+			`mask` ([batch_size, motion_seq_length-1])
 			`context` ([batch_size, motion_seq_length, music_feature_dimension])
 			`context_mask` ([batch_size, motion_seq_length])
 
@@ -376,7 +377,7 @@ class MotionRegressorModel(nn.Module):
 
 
 		# loss = F.cross_entropy(logits.contiguous().view(-1, logits.shape[-1]), targets.contiguous().view(-1),
-        #     ignore_index=self.pad_index, reduction='mean')
-        
+		#     ignore_index=self.pad_index, reduction='mean')
+		
 		
 		return logits

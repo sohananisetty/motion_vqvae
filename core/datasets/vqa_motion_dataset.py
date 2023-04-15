@@ -85,18 +85,26 @@ class MotionCollatorConditional():
             names.append(name)
             if self.dataset_name == "aist":
                 music_encoding = condition
+                # condition_padded = torch.concatenate(
+                #     (torch.ones((1,condition.shape[-1]))*self.bos,
+                #      torch.tensor(music_encoding) ,
+                #      torch.ones((1,condition.shape[-1]))*self.eos,
+                #      torch.ones((diff,condition.shape[-1]))*self.pad,
+                     
+                #      ))
+                # c_mask = torch.BoolTensor([0]+[1]*(n)+ [0] + [0]*diff)
                 condition_padded = torch.concatenate(
-                    (torch.ones((1,condition.shape[-1]))*self.bos,
+                    (
                      torch.tensor(music_encoding) ,
                      torch.ones((1,condition.shape[-1]))*self.eos,
                      torch.ones((diff,condition.shape[-1]))*self.pad,
                      
                      ))
-                c_mask = torch.BoolTensor([0]+[1]*(n)+ [0] + [0]*diff)
+                c_mask = torch.BoolTensor([1]*(n) + [0] + [0]*diff)
                 condition_list.append(condition_padded)
                 condition_batch_masks.append(c_mask)
-            else:
-                condition_list.append(condition)
+            elif self.dataset_name in ["t2m" , "kit"]:
+                condition_list.append(str(condition))
                 condition_batch_masks.append(mask)
 
 
@@ -104,7 +112,7 @@ class MotionCollatorConditional():
             text = clip.tokenize(condition_list, truncate=True).cuda()
             condition_embeddings = self.clip_model.encode_text(text).cpu().float()
 
-        if self.dataset_name == "aist":
+        elif self.dataset_name == "aist":
             condition_embeddings = torch.stack(condition_list , 0)
 
         
@@ -122,7 +130,7 @@ class MotionCollatorConditional():
         return batch    
     
 
-def id_collate(samples):
+def simple_collate(samples):
     new_batch = []
     ids = []
     for inp,name in samples:
@@ -185,8 +193,8 @@ class VQMotionDataset(data.Dataset):
         for name in tqdm(self.id_list):
             try:
                 motion = np.load(pjoin(self.motion_dir, name + '.npy'))
-                if motion.shape[0] < self.window_size:
-                    continue
+                # if motion.shape[0] < self.window_size:
+                #     continue
                 self.lengths.append(motion.shape[0] - self.window_size)
                 self.data.append(motion)
             except:
@@ -215,6 +223,9 @@ class VQMotionDataset(data.Dataset):
         motion = (motion - self.mean) / self.std
         return motion , self.id_list[item]
     
+
+
+
 class VQVarLenMotionDataset(data.Dataset):
     def __init__(self, dataset_name, data_root, max_length_seconds = 10, min_length_seconds = 3, fps = 20, split = "train" , num_stages = 6):
         self.fps = fps
@@ -337,8 +348,177 @@ class VQVarLenMotionDataset(data.Dataset):
 #         if self.split in ["val", "test" , "render"]:
         return motion , self.id_list[item]
 
-
     
+class TransMotionDatasetConditional(data.Dataset):
+    def __init__(self, dataset_name, data_root, window_size = 60 , datafolder = "joint_indices" ,w_vectorizer = None, max_length_seconds = 60, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
+        self.fps = fps
+        self.window_size  =window_size
+        self.max_length_seconds = max_length_seconds
+        self.max_motion_length = self.fps*max_length_seconds
+        self.dataset_name = dataset_name
+        self.split = split
+        
+
+        if dataset_name == 't2m':
+            self.data_root = data_root
+            self.motion_dir = os.path.join(self.data_root, datafolder)
+            self.text_dir = os.path.join(self.data_root, 'texts')
+            self.joints_num = 22
+            self.max_text_len = max_text_len
+            self.w_vectorizer = w_vectorizer
+            self.meta_dir = ''
+            self.condition = "text"
+
+        elif dataset_name == 'aist':
+            self.data_root = data_root
+            self.motion_dir = os.path.join(self.data_root, datafolder)
+            self.music_dir =  os.path.join(self.data_root, 'music')
+            self.joints_num = 22
+            self.meta_dir = ''
+            self.condition = "music"
+
+        elif dataset_name == 'kit':
+            self.data_root = data_root
+            #'./dataset/KIT-ML'
+            self.motion_dir = os.path.join(self.data_root, datafolder)
+            self.text_dir = os.path.join(self.data_root, 'texts')
+            self.joints_num = 21
+            self.max_text_len = max_text_len
+            self.w_vectorizer = w_vectorizer
+            self.meta_dir = ''
+            self.condition = "text"
+        
+        joints_num = self.joints_num
+
+        mean = np.load(os.path.join(self.data_root, 'Mean.npy'))
+        std = np.load(os.path.join(self.data_root, 'Std.npy'))
+
+        split_file = os.path.join(self.data_root, f'{split}.txt')
+
+
+        lengths = []
+        self.id_list = []
+        new_name_list = []
+        data_dict = {}
+
+        with cs.open(split_file, 'r') as f:
+            for line in f.readlines():
+                self.id_list.append(line.strip())
+
+
+        for name in tqdm(self.id_list):
+            try:
+                motion = np.load(os.path.join(self.motion_dir, name + '.npy'))
+                if motion.shape[0] < self.window_size:
+                    continue
+    
+
+                if self.dataset_name in ["t2m" , "kit"]:
+
+                    text_data = []
+                    flag = False
+                    with cs.open(pjoin(self.text_dir, name + '.txt')) as f:
+                        for line in f.readlines():
+                            text_dict = {}
+                            line_split = line.strip().split('#')
+                            caption = line_split[0]
+                            tokens = line_split[1].split(' ')
+                            f_tag = float(line_split[2])
+                            to_tag = float(line_split[3])
+                            f_tag = 0.0 if np.isnan(f_tag) else f_tag
+                            to_tag = 0.0 if np.isnan(to_tag) else to_tag
+
+                            text_dict['caption'] = caption
+                            text_dict['tokens'] = tokens
+                            if f_tag == 0.0 and to_tag == 0.0:
+                                flag = True
+                                text_data.append(text_dict)
+                            else:
+                                try:
+                                    n_motion = motion[int(f_tag*20) : int(to_tag*20)]
+                                    if (len(n_motion)) < self.window_size:
+                                        continue
+                                    new_name = random.choice('ABCDEFGHIJKLMNOPQRSTUVW') + '_' + name
+                                    while new_name in data_dict:
+                                        new_name = random.choice('ABCDEFGHIJKLMNOPQRSTUVW') + '_' + name
+                                    data_dict[new_name] = {'motion': n_motion,
+                                                        'length': len(n_motion),
+                                                        'text':[text_dict]}
+                                    new_name_list.append(new_name)
+                                    lengths.append(len(n_motion))
+                                except:
+                                    print(line_split)
+                                    print(line_split[2], line_split[3], f_tag, to_tag, name)
+
+                    if flag:
+                        data_dict[name] = {'motion': motion,
+                                        'length': len(motion),
+                                        'text':text_data}
+                        new_name_list.append(name)
+                        lengths.append(len(motion))
+
+                elif self.dataset_name == "aist":
+
+                    music_name = name.split("_")[-2]
+
+                    music_encoding=  np.load(os.path.join(self.music_dir , music_name + ".npy"))
+                    music_len = len(music_encoding)
+                    motion_len = len(motion)
+
+                    min_l = min(music_len , motion_len)
+                    data_dict[name] = {'motion': motion[:min_l],
+                                       'length': min_l,
+                                       'music':music_encoding[:min_l]}
+
+                    lengths.append(min_l)
+                    new_name_list.append(name)
+             
+            except:
+                pass
+
+            
+            
+        self.mean = mean
+        self.std = std
+        self.length_arr = np.array(lengths)
+        self.data_dict = data_dict
+        self.name_list = new_name_list
+        print("Total number of motions {}".format(len(self.data_dict)))
+    
+    def __len__(self):
+        return len(self.data_dict)
+
+    def __getitem__(self, item):
+
+        data = self.data_dict[self.name_list[item]]
+        condition = None
+
+
+        if self.dataset_name in ["t2m" , "kit"]:
+            motion, motion_len, text_list = data['motion'], data['length'], data['text']
+            text_data = random.choice(text_list)
+            caption= text_data['caption']
+            condition = caption
+
+        if self.dataset_name == "aist":
+            motion, motion_len, music = data['motion'], data['length'], data['music']
+            condition = music
+
+
+        window_size = min(self.window_size , (motion).shape[0])
+        
+        idx = random.randint(0, (motion).shape[0] - window_size)
+
+        motion = motion[idx:idx+window_size]
+
+
+        if self.dataset_name == "aist":
+            condition = (condition[idx:idx+self.window_size])
+
+
+        return motion , self.id_list[item],condition
+
+
 class VQVarLenMotionDatasetConditional(data.Dataset):
     def __init__(self, dataset_name, data_root, var_len = False , datafolder = "joint_indices" ,w_vectorizer = None, max_length_seconds = 60, min_length_seconds = 3, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
         self.fps = fps
@@ -567,7 +747,7 @@ def DATALoader(
            ):
 
     if collate_fn is None:
-        collate_fn= id_collate
+        collate_fn= simple_collate
 
     train_loader = torch.utils.data.DataLoader(dataset,
                                                 batch_size,

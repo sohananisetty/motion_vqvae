@@ -16,6 +16,7 @@ cfg.abs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 cfg.device = 'cuda'
 
 cfg.vqvae_model_name = "vqvae"
+cfg.motion_trans_model_name = "trans"
 
 cfg.pretrained_modelpath = os.path.join(cfg.abs_dir, f"checkpoints/{cfg.vqvae_model_name}/vqvae_motion.pt")
 cfg.output_dir = os.path.join(cfg.abs_dir , "checkpoints/")
@@ -47,7 +48,9 @@ cfg.train.evaluate_every = 5000
 cfg.train.eval_bs = 20
 cfg.train.train_bs = 24
 cfg.train.gradient_accumulation_steps = 4
-
+cfg.train.bos_index = 1024
+cfg.train.pad_index = 1025
+cfg.train.eos_index = 1026
 cfg.train.write_summary = True
 cfg.train.log_dir = os.path.join(cfg.abs_dir , f"logs/{cfg.vqvae_model_name}")
 
@@ -81,7 +84,7 @@ cfg.vqvae.max_seq_length = cfg.vqvae.max_length_seconds*cfg.dataset.fps
 cfg.motion_trans = CN()
 cfg.motion_trans.music_dim = 128
 cfg.motion_trans.num_tokens = cfg.vqvae.codebook_size+3
-
+cfg.motion_trans.window_size = 100
 cfg.motion_trans.max_length_seconds = 30
 cfg.motion_trans.min_length_seconds = 3
 cfg.motion_trans.max_seq_length = cfg.motion_trans.max_length_seconds*cfg.dataset.fps
