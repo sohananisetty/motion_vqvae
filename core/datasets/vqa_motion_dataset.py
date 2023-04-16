@@ -223,9 +223,7 @@ class VQMotionDataset(data.Dataset):
         motion = (motion - self.mean) / self.std
         return motion , self.id_list[item]
     
-
-
-
+    
 class VQVarLenMotionDataset(data.Dataset):
     def __init__(self, dataset_name, data_root, max_length_seconds = 10, min_length_seconds = 3, fps = 20, split = "train" , num_stages = 6):
         self.fps = fps

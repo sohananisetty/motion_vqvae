@@ -4,9 +4,7 @@ import torch.nn as nn
 from math import ceil
 
 from x_transformers.x_transformers import AttentionLayers, Encoder, Decoder, exists, default, always,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, l2norm
-from vector_quantize_pytorch import ResidualVQ, VectorQuantize
 from einops import rearrange, reduce, pack, unpack
-from core.quantization.core_vq import VectorQuantization
 from tqdm import tqdm
 
 

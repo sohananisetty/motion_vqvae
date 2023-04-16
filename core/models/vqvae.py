@@ -180,9 +180,6 @@ class MotionDecoder(nn.Module):
 		return logits
 	
 
-
-
-
 class VQMotionModel(nn.Module):
 	"""Audio Motion VQGAN model."""
 

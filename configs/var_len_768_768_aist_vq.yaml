@@ -1,15 +1,15 @@
 vqvae_model_name: "vqvae_motion_vl_aist"
 motion_trans_model_name: "trans_motion_cl_aist"
-output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist"
+output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_aist"
 dataset:
   dataset_name: "aist"
-  var_len: False
+  var_len: True
   data_folder: "/srv/scratch/sanisetty3/music_motion/AIST"
 train:
-  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist"
+  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_aist"
   resume: True
   num_stages : 6
-  num_train_iters : 300000 #'Number of training steps
+  num_train_iters : 400000 #'Number of training steps
   save_steps : 5000
   logging_steps : 10
   wandb_every : 100
@@ -42,7 +42,7 @@ vqvae:
 motion_trans:
   music_dim : 128
   num_tokens : 1027
-  max_length_seconds : 30
+  max_length_seconds : 20
   min_length_seconds : 3
   window_size : 100
   dec_dim : 768 

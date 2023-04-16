@@ -400,9 +400,6 @@ class RegressorMotionTrainer(nn.Module):
 		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
 		os.makedirs(save_file , exist_ok=True)
 
-		
-		# assert self.render_dl.batch_size == 1 , "Batch size for rendering should be 1!"
-
 		self.trans_model.eval()
 		print(f"render start")
 		with torch.no_grad():
@@ -437,8 +434,6 @@ class RegressorMotionTrainer(nn.Module):
 				gt_pose_vis = plot_3d.draw_to_batch(gt_motion_xyz.numpy(),None, [os.path.join(save_file,name[0] + "_gt.gif")])
 				pred_pose_vis = plot_3d.draw_to_batch(pred_motion_xyz.numpy(),None, [os.path.join(save_file,name[0] + "_pred.gif")])
 
-				# render(pred_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=True)
-				# render(gt_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=False)
 
 		self.trans_model.train()
 
