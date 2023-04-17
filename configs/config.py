@@ -91,6 +91,7 @@ cfg.motion_trans.max_seq_length = cfg.motion_trans.max_length_seconds*cfg.datase
 cfg.motion_trans.dec_dim = 768 #'Encoder and Decoder dimension'
 cfg.motion_trans.depth = 12
 cfg.motion_trans.heads=8
+cfg.motion_trans.sample_max = False
 
 
 cfg.eval_model = CN()

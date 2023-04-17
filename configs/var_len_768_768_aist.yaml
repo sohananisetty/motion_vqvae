@@ -48,6 +48,7 @@ motion_trans:
   dec_dim : 768 
   depth : 12
   heads: 8
+  sample_max : False
 
   
   

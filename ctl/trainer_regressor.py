@@ -287,6 +287,7 @@ class RegressorMotionTrainer(nn.Module):
 
 		for _ in range(self.grad_accum_every):
 			batch = next(self.dl_iter)
+			right_num = 0
 
 
 			inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
@@ -296,13 +297,24 @@ class RegressorMotionTrainer(nn.Module):
 					
 			loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
 
+			if not self.enable_var_len:
+				probs = torch.softmax(logits, dim=-1)
+
+				if self.args.sample_max:
+					_, cls_pred_index = torch.max(probs, dim=-1)
+
+				else:
+					dist = torch.distributions.Categorical(probs)
+					cls_pred_index = dist.sample()
+				right_num += (cls_pred_index.flatten(0) == target.flatten(0)).sum().item()
 
 			
 			self.accelerator.backward(loss / self.grad_accum_every)
 
 			accum_log(logs, dict(
 				loss = loss/self.grad_accum_every,
-				avg_max_length = int(max(lengths)) / self.grad_accum_every
+				avg_max_length = int(max(lengths)) / self.grad_accum_every,
+				accuracy = right_num/((logits.shape[0]*logits.shape[1]) * self.grad_accum_every),
 				))
 
 	
@@ -315,12 +327,13 @@ class RegressorMotionTrainer(nn.Module):
 
 
 
-		losses_str = f"{steps}: regressor model total loss: {logs['loss'].float():.3} , average max length: {logs['avg_max_length']}"
+		losses_str = f"{steps}: regressor model total loss: {logs['loss'].float():.3} , Accuracy: {logs['accuracy']:.3}, average max length: {logs['avg_max_length']}"
 
 		if log_losses:
 			self.accelerator.log({
 				"total_loss": logs["loss"],
 				"average_max_length":logs["avg_max_length"],
+				"accuracy" : logs["accuracy"]
 			}, step=steps)
 
 		if self.is_main and (steps%self.wandb_every == 0):
@@ -369,15 +382,26 @@ class RegressorMotionTrainer(nn.Module):
 			for batch in tqdm((self.valid_dl), position=0, leave=True):
 
 
-
+				right_num = 0
 				inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
 				logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
 					context = batch["condition"], context_mask = batch["condition_mask"])	
 						
 				loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
+				if not self.enable_var_len:
+					probs = torch.softmax(logits, dim=-1)
+
+					if self.args.sample_max:
+						_, cls_pred_index = torch.max(probs, dim=-1)
+
+					else:
+						dist = torch.distributions.Categorical(probs)
+						cls_pred_index = dist.sample()
+					right_num += (cls_pred_index.flatten(0) == target.flatten(0)).sum().item()
 
 				loss_dict = {
 				"total_loss": loss,
+				"accuracy":right_num/(cls_pred_index.shape[0]*cls_pred_index.shape[1])
 				}	
 			   
 				val_loss_ae.update(loss_dict)
