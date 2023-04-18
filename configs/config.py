@@ -61,6 +61,7 @@ cfg.train.weight_decay = 0.0
 cfg.train.warmup_steps = 4000
 cfg.train.gamma = 0.05
 cfg.train.lr_scheduler_type = "cosine"
+cfg.train.use_mixture = False
 
 cfg.vqvae = CN()
 

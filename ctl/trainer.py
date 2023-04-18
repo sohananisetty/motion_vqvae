@@ -143,7 +143,6 @@ class VQVAEMotionTrainer(nn.Module):
 		self.max_grad_norm = max_grad_norm
 		self.w_vectorizer = WordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
 		self.eval_wrapper = EvaluatorModelWrapper(eval_args)
-		self.best_fid = float("-inf")
 
 		if self.training_args.use_mixture:
 
@@ -231,7 +230,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 
-			self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.hml_render_ds) + len(self.aist_render_ds)}')
+			self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
 			# dataloader
 			collate_fn = MotionCollator() if self.enable_var_len else None
@@ -271,7 +270,8 @@ class VQVAEMotionTrainer(nn.Module):
 			self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=None)
 			self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
 		
-		self.tm_eval = dataset_TM_eval.DATALoader(self.dataset_args.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
+		if self.is_main:
+			self.tm_eval = dataset_TM_eval.DATALoader(self.dataset_args.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
 			
 		# prepare with accelerator
 
@@ -281,7 +281,6 @@ class VQVAEMotionTrainer(nn.Module):
 			self.dl,
 			self.valid_dl,
 			self.render_dl,
-			self.tm_eval,
 
 		) = self.accelerator.prepare(
 			self.vqvae_model,
@@ -309,7 +308,15 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 		hps = {"num_train_steps": self.num_train_steps, "max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
-		self.accelerator.init_trackers(f"{self.model_name}", config=hps)    
+		self.accelerator.init_trackers(f"{self.model_name}", config=hps)  
+
+
+		self.best_fid = float("inf")
+		self.best_div = float("-inf")
+		self.best_top1 = float("-inf")
+		self.best_top2= float("-inf")
+		self.best_top3= float("-inf")
+		self.best_matching  = float("inf")
 
 		if self.is_main:
 			wandb.login()
@@ -472,14 +479,10 @@ class VQVAEMotionTrainer(nn.Module):
 			self.validation_step()
 			self.sample_render(os.path.join(self.output_dir , "samples"))
 
-		# if self.is_main and (steps % self.calc_metrics_every == 0):
+		if self.is_main and (steps % self.calc_metrics_every == 0):
+			self.calculate_metrics(steps)
 
-		# 	best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching = evaluation_vqvae(
-		# 		val_loader = self.tm_eval, 
-		# 		net= self.vqvae_model,
-		# 		nb_iter= steps, 
-		# 		eval_wrapper = self.eval_wrapper,
-		# 		)
+			
 			
 				
 		# save model
@@ -501,6 +504,30 @@ class VQVAEMotionTrainer(nn.Module):
 		self.steps += 1
 		return logs
 	
+
+	def calculate_metrics(self , steps):
+		best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching = evaluation_vqvae(
+				best_fid = self.best_fid, 
+				best_div= self.best_div, 
+				best_top1= self.best_top1, 
+				best_top2= self.best_top2, 
+				best_top3= self.best_top3, 
+				best_matching= self.best_matching,
+				val_loader = self.tm_eval, 
+				net= self.vqvae_model,
+				nb_iter= steps, 
+				eval_wrapper = self.eval_wrapper,
+				save = False,
+				draw = False,
+
+				)
+		if best_fid < self.best_fid:
+			model_path = os.path.join(self.output_dir, f'vqvae_motion_best_fid.pt')
+			self.save(model_path)
+
+		self.best_fid, self.best_iter, self.best_div, self.best_top1, self.best_top2, self.best_top3, self.best_matching = best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching
+
+
 
 	def validation_step(self):
 		self.vqvae_model.eval()

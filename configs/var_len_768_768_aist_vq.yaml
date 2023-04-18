@@ -22,6 +22,7 @@ train:
   warmup_steps : 4000
   gamma : 0.05
   lr_scheduler_type : "cosine"
+  use_mixture: True 
   bos_index : 1024
   pad_index : 1025
   eos_index : 1026
@@ -37,7 +38,7 @@ vqvae:
   loss_vel : 0.5
   recons_loss : "l1_smooth"
   max_length_seconds : 30
-  min_length_seconds : 4
+  min_length_seconds : 5
   freeze_model: False
   window_size: 60
 motion_trans:
