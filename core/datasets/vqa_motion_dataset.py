@@ -225,7 +225,7 @@ class VQMotionDataset(data.Dataset):
     
 
 class VQVarLenMotionDataset(data.Dataset):
-    def __init__(self, dataset_name, data_root, max_length_seconds = 10, min_length_seconds = 3, fps = 20, split = "train" , num_stages = 6):
+    def __init__(self, dataset_name, data_root, mix = False, max_length_seconds = 10, min_length_seconds = 3, fps = 20, split = "train" , num_stages = 6):
         self.fps = fps
         self.min_length_seconds = min_length_seconds
         self.max_length_seconds = max_length_seconds
@@ -264,6 +264,7 @@ class VQVarLenMotionDataset(data.Dataset):
             self.meta_dir = ''
         
         joints_num = self.joints_num
+        
 
         mean = np.load(os.path.join(self.data_root, 'Mean.npy'))
         std = np.load(os.path.join(self.data_root, 'Std.npy'))
@@ -281,8 +282,9 @@ class VQVarLenMotionDataset(data.Dataset):
         for name in tqdm(self.id_list):
             try:
                 motion = np.load(os.path.join(self.motion_dir, name + '.npy'))
-                if motion.shape[0] < self.min_motion_length:
-                    continue
+                # if motion.shape[0] < self.min_motion_length:
+                #     # self.id_list.remove(name)
+                #     continue
                 self.lengths.append(motion.shape[0])
                 self.data.append(motion)
             except:
@@ -300,42 +302,33 @@ class VQVarLenMotionDataset(data.Dataset):
     
     def set_stage(self, stage):
 
-        # lengths = [self.min_motion_length , self.min_motion_length +20,
-        #                                     self.min_motion_length +40 , 
-        #                                     self.min_motion_length +80 , 
-        #                                     self.min_motion_length +120 , 
-        #                                     self.fps*self.max_length_seconds
-        #                               ]
         lengths = list(np.array(np.logspace(np.log(self.min_motion_length), np.log(self.fps*self.max_length_seconds), self.num_stages, base=np.exp(1)) + 1 , dtype = np.uint))
 
         self.max_motion_length = lengths[stage]
         print(f'changing range to: {self.min_motion_length} - {self.max_motion_length}')
         
     
-    def compute_sampling_prob(self) : 
-        
-        prob = np.array(self.lengths, dtype=np.float32)
-        prob /= np.sum(prob)
-        return prob
-    
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, item):
+        # name = self.id_list[item]
+        # motion = np.load(os.path.join(self.motion_dir, name + '.npy'))  
         motion = self.data[item]
+        
         
         motion_len = len(motion)
         
         try:
             self.window_size = np.random.randint(self.min_motion_length , min(motion_len , self.max_motion_length))
         except:
-            self.window_size = self.min_motion_length
+            self.window_size = min(motion_len , self.min_motion_length)
 
         
         idx = random.randint(0, len(motion) - self.window_size)
         # motion = motion[:min(motion_len , self.fps*self.max_length_seconds)]
 
-        # motion = motion[idx:idx+self.window_size]
+        motion = motion[idx:idx+self.window_size]
         # print( motion_len , self.window_size , idx , motion.shape)
 
         "Z Normalization"

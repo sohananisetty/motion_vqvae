@@ -174,7 +174,7 @@ def evaluation_vqvae(out_dir, val_loader, net, logger, writer, nb_iter, best_fid
 
 
 @torch.no_grad()        
-def evaluation_vqvae_loss(val_loader, net, nb_iter,eval_wrapper,loss_fnc,commit_w = 0.02,loss_vel_w = 0.5,best_fid=1000, best_iter=0, best_div=100, best_top1=0, best_top2=0, best_top3=0, best_matching=100,save = False) : 
+def evaluation_vqvae_loss(val_loader, net, nb_iter,eval_wrapper,best_fid=1000, best_iter=0, best_div=100, best_top1=0, best_top2=0, best_top3=0, best_matching=100,save = False) : 
 	net.eval()
 	nb_sample = 0
 	motion_annotation_list = []
@@ -186,14 +186,18 @@ def evaluation_vqvae_loss(val_loader, net, nb_iter,eval_wrapper,loss_fnc,commit_
 	nb_sample = 0
 	matching_score_real = 0
 	matching_score_pred = 0
-	val_loss_ae = {}
+
+	mean_gpt = np.load("/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta/mean.npy")
+	std_gpt = np.load("/srv/scratch/sanisetty3/music_motion/T2M-GPT/checkpoints/t2m/VQVAEV3_CB1024_CMT_H1024_NRES3/meta/std.npy")
+
 
 	for batch in tqdm(val_loader ,position=0, leave=True ):
 		word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, token, name = batch
 		motion = motion.to(torch.float32)
 		denorm = val_loader.dataset.inv_transform(motion.detach().cpu())
+		denorm = (denorm - mean_gpt) / std_gpt
 
-		max_len = max(m_length)
+		max_len = motion.shape[1]
 		mask = []
 		for n in m_length:
 			diff = max_len - n
@@ -205,9 +209,12 @@ def evaluation_vqvae_loss(val_loader, net, nb_iter,eval_wrapper,loss_fnc,commit_
 		et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, denorm, m_length)
 		bs, seq = motion.shape[0], motion.shape[1]
 
+		num_joints = 21 if motion.shape[-1] == 251 else 22
+
 		pred_pose, ind, commit_loss = net(motion)
 		pred_pose = pred_pose.cpu()*mask[...,None]
 		pred_denorm = val_loader.dataset.inv_transform(pred_pose.detach().cpu())
+		pred_denorm = (pred_denorm - mean_gpt) / std_gpt
 
 		et_pred, em_pred = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, pred_denorm, m_length)
 
@@ -263,6 +270,32 @@ def evaluation_vqvae_loss(val_loader, net, nb_iter,eval_wrapper,loss_fnc,commit_
 	# print("val/rec_loss" ,val_loss_ae["loss_motion"], )
 	# print("val/commit_loss" ,val_loss_ae["commit_loss"], )
 	# print("val/vel_loss" ,val_loss_ae["loss_vel"], )
+
+
+	if fid < best_fid : 
+		msg = f"--> --> \t FID Improved from {best_fid:.5f} to {fid:.5f} !!!"
+		best_fid, best_iter = fid, nb_iter
+	
+	if abs(diversity_real - diversity) < abs(diversity_real - best_div) : 
+		msg = f"--> --> \t Diversity Improved from {best_div:.5f} to {diversity:.5f} !!!"
+		best_div = diversity
+	
+	if R_precision[0] > best_top1 : 
+		msg = f"--> --> \t Top1 Improved from {best_top1:.4f} to {R_precision[0]:.4f} !!!"
+		best_top1 = R_precision[0]
+	
+	if R_precision[1] > best_top2 : 
+		msg = f"--> --> \t Top2 Improved from {best_top2:.4f} to {R_precision[1]:.4f} !!!"
+		best_top2 = R_precision[1]
+	
+	if R_precision[2] > best_top3 : 
+		msg = f"--> --> \t Top3 Improved from {best_top3:.4f} to {R_precision[2]:.4f} !!!"
+		best_top3 = R_precision[2]
+	
+	if matching_score_pred < best_matching : 
+		msg = f"--> --> \t matching_score Improved from {best_matching:.5f} to {matching_score_pred:.5f} !!!"
+		best_matching = matching_score_pred
+	
 
 
 	net.train()
