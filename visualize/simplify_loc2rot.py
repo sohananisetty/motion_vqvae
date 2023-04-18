@@ -12,7 +12,7 @@ import argparse
 
 class joints2smpl:
 
-    def __init__(self, num_frames, device_id, cuda=True):
+    def __init__(self, num_frames, device_id= 0, cuda=True):
         self.device = torch.device("cuda:" + str(device_id) if cuda else "cpu")
         # self.device = torch.device("cpu")
         self.batch_size = num_frames

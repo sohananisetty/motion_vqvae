@@ -1,13 +1,13 @@
 vqvae_model_name: "vqvae_motion_vl_aist"
 motion_trans_model_name: "trans_motion_cl_aist"
-output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist"
+output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist2"
 dataset:
   dataset_name: "aist"
   var_len: False
   data_folder: "/srv/scratch/sanisetty3/music_motion/AIST"
 train:
-  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist"
-  resume: True
+  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist2"
+  resume: False
   num_stages : 6
   num_train_iters : 300000 #'Number of training steps
   save_steps : 5000

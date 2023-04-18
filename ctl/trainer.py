@@ -27,7 +27,7 @@ from core.datasets import dataset_TM_eval
 from core.models.vqvae import VQMotionModel
 from core.models.loss import ReConsLoss
 from utils.motion_process import recover_from_ric
-from utils.eval_trans import evaluation_vqvae_loss
+from utils.eval_trans import evaluation_vqvae_loss,evaluation_vqvae
 from core.models.evaluator_wrapper import EvaluatorModelWrapper
 from utils.word_vectorizer import WordVectorizer
 
@@ -141,32 +141,138 @@ class VQVAEMotionTrainer(nn.Module):
 		)
 
 		self.max_grad_norm = max_grad_norm
-		# self.w_vectorizer = W ordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
-		# self.eval_wrapper = EvaluatorModelWrapper(eval_args)
+		self.w_vectorizer = WordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
+		self.eval_wrapper = EvaluatorModelWrapper(eval_args)
 		self.best_fid = float("-inf")
 
-		if self.enable_var_len:
-			train_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
-			self.render_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+		if self.training_args.use_mixture:
+
+			if self.enable_var_len:
+				hml_train_ds = VQVarLenMotionDataset("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				hml_valid_ds = VQVarLenMotionDataset("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , split = "val",min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				hml_render_ds = VQVarLenMotionDataset("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D", split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			
+				aist_train_ds = VQVarLenMotionDataset("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				aist_valid_ds = VQVarLenMotionDataset("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , split = "val",min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				aist_render_ds = VQVarLenMotionDataset("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			
+				train_ds = torch.utils.data.ConcatDataset([hml_train_ds, aist_train_ds])
+				weights_train = [
+				[train_ds.__len__() / (hml_train_ds.__len__())] * hml_train_ds.__len__(),
+				[train_ds.__len__() / (aist_train_ds.__len__())] * aist_train_ds.__len__(),
+				]
+
+				weights_train = list(itertools.chain.from_iterable(weights_train))
+				sampler_train = torch.utils.data.WeightedRandomSampler(weights=weights_train, num_samples=len(weights_train))
+				print("train weights: ", train_ds.__len__() / (hml_train_ds.__len__()), train_ds.__len__() / (aist_train_ds.__len__()))
+
+
+				valid_ds = torch.utils.data.ConcatDataset([hml_valid_ds, aist_valid_ds])
+				weights_valid = [
+				[valid_ds.__len__() / (hml_valid_ds.__len__())] * hml_valid_ds.__len__(),
+				[valid_ds.__len__() / (aist_valid_ds.__len__())] * aist_valid_ds.__len__(),
+				]
+
+				weights_valid = list(itertools.chain.from_iterable(weights_valid))
+				sampler_valid = torch.utils.data.WeightedRandomSampler(weights=weights_valid, num_samples=len(weights_valid))
+				print("valid weights: ", valid_ds.__len__() / (hml_valid_ds.__len__()), valid_ds.__len__() / (aist_valid_ds.__len__()))
+
+				self.render_ds = torch.utils.data.ConcatDataset([hml_render_ds, aist_render_ds])
+				weights_render = [
+				[self.render_ds.__len__() / (hml_render_ds.__len__())] * hml_render_ds.__len__(),
+				[self.render_ds.__len__() / (aist_render_ds.__len__())] * aist_render_ds.__len__(),
+				]
+
+				weights_render = list(itertools.chain.from_iterable(weights_render))
+				sampler_render = torch.utils.data.WeightedRandomSampler(weights=weights_render, num_samples=len(weights_render))
+				print("render weights: ", self.render_ds.__len__() / (hml_render_ds.__len__()), self.render_ds.__len__() / (aist_render_ds.__len__()))
+
+			else:
+
+				hml_train_ds = VQMotionDataset("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , window_size = self.args.window_size)
+				hml_valid_ds = VQMotionDataset("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , split = "val", window_size = self.args.window_size)
+				hml_render_ds = VQMotionDataset("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D", split = "render" , window_size = self.args.window_size)
+			
+				aist_train_ds = VQMotionDataset("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , window_size = self.args.window_size)
+				aist_valid_ds = VQMotionDataset("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , split = "val", window_size = self.args.window_size)
+				aist_render_ds = VQMotionDataset("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , split = "render" , window_size = self.args.window_size)
+			
+
+				train_ds = torch.utils.data.ConcatDataset([hml_train_ds, aist_train_ds])
+				weights_train = [
+				[train_ds.__len__() / (hml_train_ds.__len__())] * hml_train_ds.__len__(),
+				[train_ds.__len__() / (aist_train_ds.__len__())] * aist_train_ds.__len__(),
+				]
+
+				weights_train = list(itertools.chain.from_iterable(weights_train))
+				sampler_train = torch.utils.data.WeightedRandomSampler(weights=weights_train, num_samples=len(weights_train))
+				print("train weights: ", train_ds.__len__() / (hml_train_ds.__len__()), train_ds.__len__() / (aist_train_ds.__len__()))
+
+
+				valid_ds = torch.utils.data.ConcatDataset([hml_valid_ds, aist_valid_ds])
+				weights_valid = [
+				[valid_ds.__len__() / (hml_valid_ds.__len__())] * hml_valid_ds.__len__(),
+				[valid_ds.__len__() / (aist_valid_ds.__len__())] * aist_valid_ds.__len__(),
+				]
+
+				weights_valid = list(itertools.chain.from_iterable(weights_valid))
+				sampler_valid = torch.utils.data.WeightedRandomSampler(weights=weights_valid, num_samples=len(weights_valid))
+				print("valid weights: ", valid_ds.__len__() / (hml_valid_ds.__len__()), valid_ds.__len__() / (aist_valid_ds.__len__()))
+
+				self.render_ds = torch.utils.data.ConcatDataset([hml_render_ds, aist_render_ds])
+				weights_render = [
+				[self.render_ds.__len__() / (hml_render_ds.__len__())] * hml_render_ds.__len__(),
+				[self.render_ds.__len__() / (aist_render_ds.__len__())] * aist_render_ds.__len__(),
+				]
+
+				weights_render = list(itertools.chain.from_iterable(weights_render))
+				sampler_render = torch.utils.data.WeightedRandomSampler(weights=weights_render, num_samples=len(weights_render))
+				print("render weights: ", self.render_ds.__len__() / (hml_render_ds.__len__()), self.render_ds.__len__() / (aist_render_ds.__len__()))
+
+
+
+			self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.hml_render_ds) + len(self.aist_render_ds)}')
+
+			# dataloader
+			collate_fn = MotionCollator() if self.enable_var_len else None
+
+			
+
+			self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,sampler = sampler_train,collate_fn=collate_fn)
+			self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, sampler = sampler_valid, shuffle = False,collate_fn=collate_fn)
+			self.render_dl = DATALoader(self.render_ds , batch_size = 1, sampler = sampler_render, shuffle = False,collate_fn=collate_fn)
+			# self.aist_render_dl = DATALoader(self.aist_render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
+			# self.valid_dl = dataset_TM_eval.DATALoader(self.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
+			
+
 		else:
+			if self.enable_var_len:
+				train_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
+				self.render_ds = VQVarLenMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			
+			
+			else:
 
-			train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_length_seconds = self.args.max_length_seconds)
-			valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
-			self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_length_seconds = self.args.max_length_seconds)
+				train_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,max_length_seconds = self.args.max_length_seconds)
+				valid_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
+				self.render_ds = VQMotionDataset(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_length_seconds = self.args.max_length_seconds)
 
-		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
-		# dataloader
-		collate_fn = MotionCollator() if self.enable_var_len else None
 
+			self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
+
+			# dataloader
+			collate_fn = MotionCollator() if self.enable_var_len else None
+
+			
+
+			self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
+			self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=None)
+			self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
 		
-
-		self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
-		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=None)
-		self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
-		# self.valid_dl = dataset_TM_eval.DATALoader(self.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
-		
+		self.tm_eval = dataset_TM_eval.DATALoader(self.dataset_args.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
+			
 		# prepare with accelerator
 
 		(
@@ -174,14 +280,16 @@ class VQVAEMotionTrainer(nn.Module):
 			self.optim,
 			self.dl,
 			self.valid_dl,
-			self.render_dl
+			self.render_dl,
+			self.tm_eval,
 
 		) = self.accelerator.prepare(
 			self.vqvae_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
-			self.render_dl
+			self.render_dl,
+			
 		)
 
 		self.accelerator.register_for_checkpointing(self.lr_scheduler)
@@ -192,6 +300,7 @@ class VQVAEMotionTrainer(nn.Module):
 		self.save_model_every = self.training_args.save_steps
 		self.log_losses_every = self.training_args.logging_steps
 		self.evaluate_every = self.training_args.evaluate_every
+		self.calc_metrics_every = 2*self.training_args.evaluate_every
 		self.wandb_every = self.training_args.wandb_every
 
 		self.apply_grad_penalty_every = apply_grad_penalty_every
@@ -204,7 +313,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		if self.is_main:
 			wandb.login()
-			wandb.init(project="vqvae_768_768_vl_aist")
+			wandb.init(project="vqvae_768_768_vl_mix")
 
 		    
 
@@ -254,7 +363,12 @@ class VQVAEMotionTrainer(nn.Module):
 		# print("Loading at stage" , np.searchsorted(self.stage_steps , int(self.steps.item())) - 1)
 		self.stage = max(np.searchsorted(self.stage_steps , int(self.steps.item())) - 1 , 0)
 		print("starting at step: ", self.steps ,"and stage", self.stage)
-		self.dl.dataset.set_stage(self.stage)
+
+		if not self.training_args.use_mixture:
+			self.dl.dataset.set_stage(self.stage)
+		else:
+			self.dl.dataset.datasets[0].set_stage(self.stage)
+			self.dl.dataset.datasets[1].set_stage(self.stage)
 
 
 
@@ -264,11 +378,17 @@ class VQVAEMotionTrainer(nn.Module):
 		steps = int(self.steps.item())
 
 		if steps in self.stage_steps:
-			# self.stage += 1 
-			self.stage = self.stage_steps.index(steps)
-			# self.stage  = min(self.stage , len(self.stage_steps))
-			print("changing to stage" , self.stage)
-			self.dl.dataset.set_stage(self.stage)
+
+			if not self.training_args.use_mixture:
+				self.stage = self.stage_steps.index(steps)
+				print("changing to stage" , self.stage)
+				self.dl.dataset.set_stage(self.stage)
+			else:
+				self.stage = self.stage_steps.index(steps)
+				print("changing to stage" , self.stage)
+				self.dl.dataset.datasets[0].set_stage(self.stage)
+				self.dl.dataset.datasets[1].set_stage(self.stage)
+
 
 
 		apply_grad_penalty = self.apply_grad_penalty_every > 0 and not (steps % self.apply_grad_penalty_every)
@@ -350,15 +470,16 @@ class VQVAEMotionTrainer(nn.Module):
 
 		if self.is_main and (steps % self.evaluate_every == 0):
 			self.validation_step()
-			# best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching,val_loss_dict = evaluation_vqvae_loss(
-			# 	val_loader = self.valid_dl, 
-			# 	net= self.vqvae_model,
-			# 	nb_iter= steps, 
-			# 	eval_wrapper = self.eval_wrapper,
-			# 	loss_fnc = self.loss_fnc,
-			# 	)
-			
 			self.sample_render(os.path.join(self.output_dir , "samples"))
+
+		# if self.is_main and (steps % self.calc_metrics_every == 0):
+
+		# 	best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching = evaluation_vqvae(
+		# 		val_loader = self.tm_eval, 
+		# 		net= self.vqvae_model,
+		# 		nb_iter= steps, 
+		# 		eval_wrapper = self.eval_wrapper,
+		# 		)
 			
 				
 		# save model
@@ -439,7 +560,17 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 				gt_motion = batch["motion"]
-				name = batch["names"]
+				name = str(batch["names"])
+
+				if self.training_args.use_mixture:
+
+					render_mean = self.render_ds.datasets[0].mean if len(name[0].split()) <2 else self.render_ds.datasets[1].mean
+					render_std = self.render_ds.datasets[0].std if len(name[0].split()) <2 else self.render_ds.datasets[1].std
+				else:
+					render_mean = self.render_ds.mean 
+					render_std = self.render_ds.std 
+
+
 
 				motion_len = int(batch.get("motion_lengths" , [gt_motion.shape[1]])[0])
 
@@ -447,10 +578,10 @@ class VQVAEMotionTrainer(nn.Module):
 
 				pred_motion , _, _ = self.vqvae_model(gt_motion)
 
-				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
+				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*render_std+render_mean, 22)
 				gt_motion_xyz = gt_motion_xyz.reshape(gt_motion.shape[0],-1, 22, 3)
 
-				pred_motion_xyz = recover_from_ric(pred_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
+				pred_motion_xyz = recover_from_ric(pred_motion.cpu().float()*render_std+render_mean, 22)
 				pred_motion_xyz = pred_motion_xyz.reshape(pred_motion.shape[0],-1, 22, 3)
 
 				
@@ -460,6 +591,8 @@ class VQVAEMotionTrainer(nn.Module):
 
 				# render(pred_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=True)
 				# render(gt_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=False)
+
+			
 
 		self.vqvae_model.train()
 

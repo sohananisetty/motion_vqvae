@@ -86,6 +86,9 @@ class SMPLify3D():
         elif joints_category=="AMASS":
             self.smpl_index = config.amass_smpl_idx
             self.corr_index = config.amass_idx
+        elif joints_category=="KIT":
+            self.smpl_index = config.kit_smpl_idx
+            self.corr_index = config.kit_idx
         else:
             self.smpl_index = None 
             self.corr_index = None

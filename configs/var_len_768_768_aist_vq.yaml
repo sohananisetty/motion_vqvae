@@ -1,21 +1,21 @@
-vqvae_model_name: "vqvae_motion_vl_aist"
-motion_trans_model_name: "trans_motion_cl_aist"
-output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_aist"
+vqvae_model_name: "vqvae_motion_vl_mix"
+motion_trans_model_name: "trans_motion_cl_mix"
+output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_mix"
 dataset:
-  dataset_name: "aist"
+  dataset_name: "t2m"
   var_len: True
   data_folder: "/srv/scratch/sanisetty3/music_motion/AIST"
 train:
-  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_aist"
+  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_mix"
   resume: True
   num_stages : 6
-  num_train_iters : 400000 #'Number of training steps
+  num_train_iters : 320000 #'Number of training steps
   save_steps : 5000
   logging_steps : 10
   wandb_every : 100
   evaluate_every : 5000
   eval_bs : 20
-  train_bs : 48
+  train_bs : 64
   gradient_accumulation_steps : 4
   learning_rate : 2e-4
   weight_decay : 0.0
@@ -33,17 +33,18 @@ vqvae:
   heads: 8
   codebook_dim : 768
   codebook_size : 1024
-  commit : 0.02
+  commit : 0.2
   loss_vel : 0.5
   recons_loss : "l1_smooth"
   max_length_seconds : 30
-  min_length_seconds : 5
+  min_length_seconds : 4
   freeze_model: False
+  window_size: 60
 motion_trans:
   music_dim : 128
   num_tokens : 1027
   max_length_seconds : 20
-  min_length_seconds : 3
+  min_length_seconds : 4
   window_size : 100
   dec_dim : 768 
   depth : 12

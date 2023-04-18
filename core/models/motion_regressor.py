@@ -243,6 +243,7 @@ class MotionRegressorModel(nn.Module):
 		scaled_sinu_pos_emb = True,
 		pad_idx=self.pad_index,
 		attn_layers = Decoder(
+			cross_attn_tokens_dropout = 0.3,
 			cross_attend = True,
 			dim = args.dec_dim,
 			depth = args.depth,
@@ -261,6 +262,7 @@ class MotionRegressorModel(nn.Module):
 		# use_abs_pos_emb = False
 		# attn_layers = Decoder(
 		# 	cross_attend = True,
+		#	cross_attn_tokens_dropout = 0.3,
 		# 	alibi_pos_bias = True, # turns on ALiBi positional embedding
 		#	alibi_num_heads = 4 
 		# 	dim = args.dec_dim,

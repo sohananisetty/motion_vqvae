@@ -51,8 +51,10 @@ def render(motions, outdir='test_vis', step=None, name=None, pred=True):
     motions[:, :, 1] -= height_offset
     trajec = motions[:, 0, [0, 2]]
 
-    j2s = joints2smpl(num_frames=frames, device_id=0, cuda=True)
-    rot2xyz = Rotation2xyz(device=torch.device("cuda:0"))
+    j2s = joints2smpl(num_frames=frames, device_id=0, cuda=False)
+    # rot2xyz = Rotation2xyz(device=torch.device("cuda:0"))
+    rot2xyz = Rotation2xyz(device=torch.device("cpu"))
+
     faces = rot2xyz.smpl_model.faces
 
            
@@ -63,6 +65,8 @@ def render(motions, outdir='test_vis', step=None, name=None, pred=True):
     #(not os.path.exists(os.path.join(outdir , name+'_pred.pt')) and pred) or (not os.path.exists(outdir + name+'_gt.pt') and not pred): 
         print(f'Running SMPLify, it may take a few minutes.')
         motion_tensor, opt_dict = j2s.joint2smpl(motions)  # [nframes, njoints, 3]
+
+        print(motion_tensor.shape , opt_dict.keys())
 
         vertices = rot2xyz(torch.tensor(motion_tensor).clone(), mask=None,
                                         pose_rep='rot6d', translation=True, glob=True,

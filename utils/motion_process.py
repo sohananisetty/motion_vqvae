@@ -2,6 +2,7 @@ import torch
 from utils.quaternion import quaternion_to_cont6d, qrot, qinv
 
 def recover_root_rot_pos(data):
+    
     rot_vel = data[..., 0]
     r_rot_ang = torch.zeros_like(rot_vel).to(data.device)
     '''Get Y-axis rotation from rotation velocity'''
@@ -13,6 +14,7 @@ def recover_root_rot_pos(data):
     r_rot_quat[..., 2] = torch.sin(r_rot_ang)
 
     r_pos = torch.zeros(data.shape[:-1] + (3,)).to(data.device)
+    data = data.to(torch.float)
     r_pos[..., 1:, [0, 2]] = data[..., :-1, 1:3]
     '''Add Y-axis rotation to root position'''
     r_pos = qrot(qinv(r_rot_quat), r_pos)
@@ -43,7 +45,7 @@ def recover_from_rot(data, joints_num, skeleton):
 def recover_from_ric(data, joints_num):
     r_rot_quat, r_pos = recover_root_rot_pos(data)
     positions = data[..., 4:(joints_num - 1) * 3 + 4]
-    positions = positions.view(positions.shape[:-1] + (-1, 3))
+    positions = positions.view(positions.shape[:-1] + (-1, 3)).to(torch.float32)
 
     '''Add Y-axis rotation to local joints'''
     positions = qrot(qinv(r_rot_quat[..., None, :]).expand(positions.shape[:-1] + (4,)), positions)

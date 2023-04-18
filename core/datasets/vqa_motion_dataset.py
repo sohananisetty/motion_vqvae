@@ -223,7 +223,7 @@ class VQMotionDataset(data.Dataset):
         motion = (motion - self.mean) / self.std
         return motion , self.id_list[item]
     
-    
+
 class VQVarLenMotionDataset(data.Dataset):
     def __init__(self, dataset_name, data_root, max_length_seconds = 10, min_length_seconds = 3, fps = 20, split = "train" , num_stages = 6):
         self.fps = fps
@@ -335,8 +335,8 @@ class VQVarLenMotionDataset(data.Dataset):
         idx = random.randint(0, len(motion) - self.window_size)
         # motion = motion[:min(motion_len , self.fps*self.max_length_seconds)]
 
-        motion = motion[idx:idx+self.window_size]
-#         print( motion_len , self.window_size , idx , motion.shape)
+        # motion = motion[idx:idx+self.window_size]
+        # print( motion_len , self.window_size , idx , motion.shape)
 
         "Z Normalization"
         motion = (motion - self.mean) / self.std
@@ -742,6 +742,7 @@ def DATALoader(
             num_workers = 0,
             shuffle = True,
             collate_fn = None,
+            sampler = None
            ):
 
     if collate_fn is None:
@@ -750,7 +751,7 @@ def DATALoader(
     train_loader = torch.utils.data.DataLoader(dataset,
                                                 batch_size,
                                                 shuffle=shuffle,
-                                                #sampler=sampler,
+                                                sampler=sampler,
                                                 num_workers=num_workers,
                                                 collate_fn=collate_fn,
                                                 drop_last = True)
