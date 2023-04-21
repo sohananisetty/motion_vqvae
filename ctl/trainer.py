@@ -328,12 +328,12 @@ class VQVAEMotionTrainer(nn.Module):
 	def is_local_main(self):
 		return self.accelerator.is_local_main_process
 
-	def save(self, path):
+	def save(self, path, loss = None):
 		pkg = dict(
 			model = self.accelerator.get_state_dict(self.vqvae_model),
 			optim = self.optim.state_dict(),
 			steps = self.steps,
-			total_loss = self.best_loss,
+			total_loss = self.best_loss if loss is None else loss,
 		)
 		torch.save(pkg, path)
 
@@ -464,7 +464,7 @@ class VQVAEMotionTrainer(nn.Module):
 			self.sample_render(os.path.join(self.output_dir , "samples"))
 
 		if self.is_main and (steps % self.calc_metrics_every == 0):
-			self.calculate_metrics(steps)
+			self.calculate_metrics(steps, logs["loss"])
 
 			
 			
@@ -476,11 +476,11 @@ class VQVAEMotionTrainer(nn.Module):
 			model_path = os.path.join(self.output_dir , "checkpoints", f'vqvae_motion.{steps}.pt')
 			self.save(model_path)
 
-			if float(loss) < self.best_loss :
+			if float(logs["loss"]) <= self.best_loss:
 
 				model_path = os.path.join(self.output_dir, f'vqvae_motion.pt')
 				self.save(model_path)
-				self.best_loss = loss
+				self.best_loss = logs["loss"]
 
 			self.print(f'{steps}: saving model to {str(os.path.join(self.output_dir , "checkpoints") )}')
 
@@ -489,7 +489,7 @@ class VQVAEMotionTrainer(nn.Module):
 		return logs
 	
 
-	def calculate_metrics(self , steps):
+	def calculate_metrics(self , steps , loss):
 		best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching = evaluation_vqvae_loss(
 				best_fid = self.best_fid, 
 				best_div= self.best_div, 
@@ -506,18 +506,20 @@ class VQVAEMotionTrainer(nn.Module):
 				)
 		if best_fid < self.best_fid:
 			model_path = os.path.join(self.output_dir, f'vqvae_motion_best_fid.pt')
-			self.save(model_path)
+			self.save(model_path , loss=loss)
+
+		wandb.log({f'best_fid': best_fid})  
+		wandb.log({f'best_div': best_div})  
+		wandb.log({f'best_top1': best_top1})  
+		wandb.log({f'best_top2': best_top2})  
+		wandb.log({f'best_top3': best_top3})  
+		wandb.log({f'best_matching': best_matching})  
 
 
 		self.best_fid, self.best_iter, self.best_div, self.best_top1, self.best_top2, self.best_top3, self.best_matching = best_fid, best_iter, best_div, best_top1, best_top2, best_top3, best_matching
 
 		
-		wandb.log({f'best_fid': self.best_fid})  
-		wandb.log({f'best_div': self.best_div})  
-		wandb.log({f'best_top1': self.best_top1})  
-		wandb.log({f'best_top2': self.best_top2})  
-		wandb.log({f'best_top3': self.best_top3})  
-		wandb.log({f'best_matching': self.best_matching})  
+		
 
 	def validation_step(self):
 		self.vqvae_model.eval()
@@ -581,8 +583,8 @@ class VQVAEMotionTrainer(nn.Module):
 
 				if self.training_args.use_mixture:
 
-					render_mean = self.render_ds.datasets[0].mean if len(name[0].split("_")) <2 else self.render_ds.datasets[1].mean
-					render_std = self.render_ds.datasets[0].std if len(name[0].split("_")) <2 else self.render_ds.datasets[1].std
+					render_mean = self.render_ds.datasets[0].mean if len(name.split("_")) <2 else self.render_ds.datasets[1].mean
+					render_std = self.render_ds.datasets[0].std if len(name.split("_")) <2 else self.render_ds.datasets[1].std
 				else:
 					render_mean = self.render_ds.mean 
 					render_std = self.render_ds.std 
@@ -622,10 +624,10 @@ class VQVAEMotionTrainer(nn.Module):
 
 
 		if resume:
-			save_path = os.path.join(self.output_dir)
-			# chk = sorted(os.listdir(save_path) , key = lambda x: int(x.split('.')[1]))[-1]
-			print("resuming from ", os.path.join(save_path, f'vqvae_motion.pt'))
-			self.load(os.path.join(save_path ,  f'vqvae_motion.pt'))
+			save_path = os.path.join(self.output_dir , "checkpoints")
+			chk = sorted(os.listdir(save_path) , key = lambda x: int(x.split('.')[1]))[-1]
+			print("resuming from ", os.path.join(save_path, f'{chk}'))
+			self.load(os.path.join(save_path ,  f'{chk}'))
 
 		while self.steps < self.num_train_steps:
 			logs = self.train_step()

@@ -9,7 +9,7 @@ train:
   output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_mix"
   resume: True
   num_stages : 8
-  num_train_iters : 320000 #'Number of training steps
+  num_train_iters : 300000 #'Number of training steps
   save_steps : 5000
   logging_steps : 10
   wandb_every : 100
@@ -44,7 +44,7 @@ vqvae:
 motion_trans:
   music_dim : 128
   num_tokens : 1027
-  max_length_seconds : 20
+  max_length_seconds : 25
   min_length_seconds : 4
   window_size : 100
   dec_dim : 768 

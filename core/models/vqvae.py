@@ -180,6 +180,26 @@ class MotionDecoder(nn.Module):
 		return logits
 	
 
+class MotionDecoderPositional(nn.Module):
+
+
+	def __init__(self, dim, logit_dim , attn_layers):
+		super(MotionDecoderPositional , self).__init__()
+		
+		self.to_logit = nn.Linear(dim,logit_dim)
+		self.attn_layers = attn_layers
+		
+
+	def forward(self, x , mask = None):
+		"""x: b n c"""
+		
+	   
+		x = self.attn_layers(x , mask = mask)
+		logits = self.to_logit(x)
+
+		return logits
+	
+
 class VQMotionModel(nn.Module):
 	"""Audio Motion VQGAN model."""
 

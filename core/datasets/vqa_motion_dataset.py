@@ -133,16 +133,125 @@ class MotionCollatorConditional():
 def simple_collate(samples):
     new_batch = []
     ids = []
-    for inp,name in samples:
-        new_batch.append(torch.Tensor(inp))
-        ids.append(name)
+    lens=[]
 
-    batch = {
-            "motion": torch.stack(new_batch , 0),
-            "names" : np.array(ids)
-        }
+    if len(samples[0]) == 3:
+        for inp,length,name in samples:
+            new_batch.append(torch.Tensor(inp))
+            ids.append(name)
+            lens.append(length)
+
+        batch = {
+                "motion": torch.stack(new_batch , 0),
+                "names" : np.array(ids),
+                "motion_lengths" : np.array(lens),
+            }
+
+
+    else:
+        for inp,name in samples:
+            new_batch.append(torch.Tensor(inp))
+            ids.append(name)
+
+        batch = {
+                "motion": torch.stack(new_batch , 0),
+                "names" : np.array(ids)
+            }
     
     return batch
+
+
+
+class VQFullMotionDataset(data.Dataset):
+    def __init__(self, dataset_name, data_root, fps = 20, split = "train", window_size = 200):
+        self.fps = fps
+        self.window_size = window_size
+
+        self.dataset_name = dataset_name
+        self.split = split
+
+        if dataset_name == 't2m':
+            self.data_root = data_root
+            self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
+            self.text_dir = pjoin(self.data_root, 'texts')
+            self.joints_num = 22
+            self.meta_dir = ''
+
+        if dataset_name == 'aist':
+            self.data_root = data_root
+            self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
+            self. music_dir = pjoin(self.data_root, 'music')
+            self.joints_num = 22
+            self.meta_dir = ''
+
+        elif dataset_name == 'kit':
+            self.data_root = data_root
+            #'./dataset/KIT-ML'
+            self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
+            self.text_dir = pjoin(self.data_root, 'texts')
+            self.joints_num = 21
+            self.meta_dir = ''
+        
+        joints_num = self.joints_num
+
+        mean = np.load(pjoin(self.data_root, 'Mean.npy'))
+        std = np.load(pjoin(self.data_root, 'Std.npy'))
+
+        split_file = pjoin(self.data_root, f'{split}.txt')
+
+        self.data = []
+        self.lengths = []
+        self.id_list = []
+        with cs.open(split_file, 'r') as f:
+            for line in f.readlines():
+                self.id_list.append(line.strip())
+
+        for name in tqdm(self.id_list):
+            try:
+                motion = np.load(pjoin(self.motion_dir, name + '.npy'))
+                self.lengths.append(motion.shape[0])
+                self.data.append(motion)
+            except:
+                # Some motion may not exist in KIT dataset
+                pass
+
+            
+        self.mean = mean
+        self.std = std
+        print("Total number of motions {}".format(len(self.data)))
+
+    def inv_transform(self, data):
+        return data * self.std + self.mean
+
+   
+    
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, item):
+        motion = self.data[item]     
+        n = motion.shape[0] 
+
+        if self.window_size==-1:
+            motion = (motion - self.mean) / self.std
+            return motion , n ,self.id_list[item]
+
+        if n < self.window_size:
+            
+            diff =self.window_size - n
+            # print(motion.shape ,np.zeros((diff,motion.shape[1])).shape )
+            motion = np.concatenate((motion,  np.zeros((diff,motion.shape[1]))) , 0)
+            motion_len = n
+        else:
+            motion = motion[:self.window_size]
+            motion_len = self.window_size
+
+        
+
+        "Z Normalization"
+        motion = (motion - self.mean) / self.std
+        return motion , motion_len ,self.id_list[item]
+   
 
 class VQMotionDataset(data.Dataset):
     def __init__(self, dataset_name, data_root, max_length_seconds = 10, window_size = 64, fps = 20, split = "train"):
