@@ -60,7 +60,7 @@ class MotionTokenTransformer(nn.Module):
 		self,
 		*,
 		num_tokens,
-		max_seq_len,
+		max_seq_len=None,
 		attn_layers,
 		emb_dim = None,
 		cond_dim = None,
@@ -231,20 +231,39 @@ class MotionRegressorModel(nn.Module):
 		self.device = device
 		self.pad_index = pad_value
 		self.args = args
-		self.max_seq_len = args.max_seq_length
+		self.max_seq_len = None
 
 
 
+
+		# self.motionDecoder = MotionTokenTransformer(
+		# max_seq_len = args.max_seq_length,
+		# num_tokens = args.num_tokens,
+		# cond_dim  =args.music_dim,
+		# scaled_sinu_pos_emb = True,
+		# pad_idx=self.pad_index,
+		# attn_layers = Decoder(
+		# 	cross_attn_tokens_dropout = 0.3,
+		# 	cross_attend = True,
+		# 	dim = args.dec_dim,
+		# 	depth = args.depth,
+		# 	heads = args.heads,
+		# )
+		# )
+
+
+		# self.decoder = AutoregressiveWrapper(self.decoder, ignore_index=ignore_index, pad_value=pad_value)
 
 		self.motionDecoder = MotionTokenTransformer(
-		max_seq_len = args.max_seq_length,
+		max_seq_len = None,
 		num_tokens = args.num_tokens,
 		cond_dim  =args.music_dim,
-		scaled_sinu_pos_emb = True,
-		pad_idx=self.pad_index,
+		use_abs_pos_emb = False,
 		attn_layers = Decoder(
-			cross_attn_tokens_dropout = 0.3,
 			cross_attend = True,
+			cross_attn_tokens_dropout = 0.2,
+			alibi_pos_bias = True, # turns on ALiBi positional embedding
+			alibi_num_heads = 4 ,
 			dim = args.dec_dim,
 			depth = args.depth,
 			heads = args.heads,
@@ -252,27 +271,15 @@ class MotionRegressorModel(nn.Module):
 		)
 
 
-		# self.decoder = AutoregressiveWrapper(self.decoder, ignore_index=ignore_index, pad_value=pad_value)
-
-		# self.motionDecoder = MotionTokenTransformer(
-		# max_seq_len = args.max_seq_len,
-		# num_tokens = args.num_tokens,
-		# cond_dim  =args.music_dim,
-		# token_emb_type = "token",
-		# use_abs_pos_emb = False
-		# attn_layers = Decoder(
-		# 	cross_attend = True,
-		#	cross_attn_tokens_dropout = 0.3,
-		# 	alibi_pos_bias = True, # turns on ALiBi positional embedding
-		#	alibi_num_heads = 4 
-		# 	dim = args.dec_dim,
-		# 	depth = args.depth,
-		# 	heads = args.heads,
-		# )
-
-
 		assert mask_prob < 1.
 		self.mask_prob = mask_prob
+
+
+
+		
+
+
+
 
 	@torch.no_grad()
 	def generate(
@@ -304,7 +311,7 @@ class MotionRegressorModel(nn.Module):
 
 		for sl in tqdm(range(seq_len)):
 
-			x = out[:, -self.max_seq_len:]
+			x = out
 
 			# logits = self.forward(motion = x, context = context[:,:sl] , context_mask = context_mask[:,:sl])[:, -1]
 			logits = self.forward(motion = x, context = context[:,:(sl+1)] , context_mask = context_mask[:,:(sl+1)])[:, -1]
@@ -331,7 +338,7 @@ class MotionRegressorModel(nn.Module):
 					out = out.masked_fill(mask, self.pad_value)
 					break
 
-		out = out[:, t:]
+		# out = out[:, t:]
 
 		if num_dims == 1:
 			out = out.squeeze(0)
@@ -363,13 +370,13 @@ class MotionRegressorModel(nn.Module):
 		
 		
 
-		if self.mask_prob > 0. and self.training:
-			rand = torch.randn(motion.shape)
-			rand[:, 0] = -torch.finfo(rand.dtype).max # first token should not be masked out
-			num_mask = min(int(t * self.mask_prob), t - 1)
-			indices = rand.topk(num_mask, dim = -1).indices
-			token_mask = ~torch.zeros_like(motion).scatter(1, indices, 1.).bool()
-			mask = mask*token_mask
+		# if self.mask_prob > 0. and self.training:
+		# 	rand = torch.randn(motion.shape)
+		# 	rand[:, 0] = -torch.finfo(rand.dtype).max # first token should not be masked out
+		# 	num_mask = min(int(t * self.mask_prob), t - 1)
+		# 	indices = rand.topk(num_mask, dim = -1).indices
+		# 	token_mask = ~torch.zeros_like(motion).scatter(1, indices, 1.).bool()
+		# 	mask = mask*token_mask
 
 		logits = self.motionDecoder(x = motion, mask = mask , context = context , context_mask = context_mask)
 

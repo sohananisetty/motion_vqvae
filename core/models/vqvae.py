@@ -225,16 +225,31 @@ class VQMotionModel(nn.Module):
 				
 			)
 		)
-				
-		self.motionDecoder = MotionDecoder(
+
+		if args.use_positional_vqvae_decoder:
+
+			self.motionDecoder = MotionDecoder(
 			dim = args.enc_dec_dim,
 			logit_dim = args.motion_dim,
 			attn_layers = Decoder(
 					dim = args.enc_dec_dim,
 					depth = args.depth,
 					heads = args.heads,
+					alibi_pos_bias = True,
+					alibi_num_heads = 4
 				)
 			)
+		else:
+
+			self.motionDecoder = MotionDecoder(
+				dim = args.enc_dec_dim,
+				logit_dim = args.motion_dim,
+				attn_layers = Decoder(
+						dim = args.enc_dec_dim,
+						depth = args.depth,
+						heads = args.heads,
+					)
+				)
 		
 		# self.rq = ResidualVQ(
 		# 	dim = 128,

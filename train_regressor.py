@@ -16,9 +16,9 @@ def main():
 
 
     trans_model = MotionRegressorModel(args = cfg.motion_trans ,pad_value=cfg.train.pad_index )
-    vqvae_model = VQMotionModel(cfg.vqvae)
+    vqvae_model = VQMotionModel(cfg.vqvae).eval()
 
-    pkg = torch.load(f"/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_aist/vqvae_motion.pt", map_location = 'cpu')
+    pkg = torch.load(f"/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_mix/vqvae_motion_best_fid.pt", map_location = 'cpu')
     vqvae_model.load_state_dict(pkg["model"])
 
     trainer = RegressorMotionTrainer(

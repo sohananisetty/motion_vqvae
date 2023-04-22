@@ -1,20 +1,20 @@
-vqvae_model_name: "vqvae_motion_vl_aist"
-motion_trans_model_name: "trans_motion_cl_aist"
-output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist2"
+vqvae_model_name: "vqvae_motion_vl_mix"
+motion_trans_model_name: "trans_motion_vl_albi_aist"
+output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist"
 dataset:
   dataset_name: "aist"
-  var_len: False
+  var_len: True
   data_folder: "/srv/scratch/sanisetty3/music_motion/AIST"
 train:
-  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/const_len/trans_768_768_aist2"
+  output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist"
   resume: False
   num_stages : 6
-  num_train_iters : 300000 #'Number of training steps
+  num_train_iters : 200000 #'Number of training steps
   save_steps : 5000
   logging_steps : 10
   wandb_every : 100
   evaluate_every : 5000
-  eval_bs : 20
+  eval_bs : 1
   train_bs : 48
   gradient_accumulation_steps : 4
   learning_rate : 2e-4
@@ -22,6 +22,7 @@ train:
   warmup_steps : 4000
   gamma : 0.05
   lr_scheduler_type : "cosine"
+  use_mixture: False 
   bos_index : 1024
   pad_index : 1025
   eos_index : 1026
@@ -33,17 +34,19 @@ vqvae:
   heads: 8
   codebook_dim : 768
   codebook_size : 1024
-  commit : 0.02
+  commit : 0.2
   loss_vel : 0.5
   recons_loss : "l1_smooth"
   max_length_seconds : 30
-  min_length_seconds : 5
+  min_length_seconds : 4
   freeze_model: False
+  use_positional_vqvae_decoder: False
+  window_size: 60
 motion_trans:
   music_dim : 128
   num_tokens : 1027
   max_length_seconds : 30
-  min_length_seconds : 3
+  min_length_seconds : 5
   window_size : 100
   dec_dim : 768 
   depth : 12

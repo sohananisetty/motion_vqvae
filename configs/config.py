@@ -81,6 +81,7 @@ cfg.vqvae.window_size = 64
 cfg.vqvae.max_length_seconds = 10
 cfg.vqvae.min_length_seconds = 3
 cfg.vqvae.max_seq_length = cfg.vqvae.max_length_seconds*cfg.dataset.fps
+cfg.vqvae.use_positional_vqvae_decoder = False
 
 cfg.motion_trans = CN()
 cfg.motion_trans.music_dim = 128

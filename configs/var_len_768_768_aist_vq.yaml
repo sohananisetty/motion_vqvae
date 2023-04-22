@@ -41,6 +41,7 @@ vqvae:
   min_length_seconds : 4
   freeze_model: False
   window_size: 60
+  use_positional_vqvae_decoder: False
 motion_trans:
   music_dim : 128
   num_tokens : 1027

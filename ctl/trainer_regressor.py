@@ -31,7 +31,7 @@ from utils.eval_trans import evaluation_vqvae_loss
 from core.models.evaluator_wrapper import EvaluatorModelWrapper
 from utils.word_vectorizer import WordVectorizer
 from core.models.motion_regressor import MotionRegressorModel,top_k
-
+from utils.eval_music import evaluate_music_motion_vqvae, evaluate_music_motion_trans,get_target_indices
 
 
 def exists(val):
@@ -142,14 +142,17 @@ class RegressorMotionTrainer(nn.Module):
 		self.best_fid = float("-inf")
 
 		if self.enable_var_len:
-			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds)
-			self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices_max_400", max_length_seconds = self.args.max_length_seconds, window_size = 400,force_len=True)
+			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400",max_length_seconds = self.args.max_length_seconds,window_size=400)
+
+			# valid_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			# self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 		else:
 
-			train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", max_length_seconds = self.args.max_length_seconds , window_size=self.args.window_size)
-			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", max_length_seconds = self.args.max_length_seconds,window_size=self.args.window_size)
-			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , max_length_seconds = self.args.max_length_seconds,window_size=self.args.window_size)
+			train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", datafolder="joint_indices_max_400",max_length_seconds = self.args.max_length_seconds , window_size=self.args.window_size)
+			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", datafolder="joint_indices_max_400",max_length_seconds = self.args.max_length_seconds,window_size=self.args.window_size)
+			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400",max_length_seconds = self.args.max_length_seconds,window_size=self.args.window_size)
 
 		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
@@ -196,6 +199,14 @@ class RegressorMotionTrainer(nn.Module):
 
 
 
+		self.best_fid_k = float("inf")
+		self.best_fid_g = float("inf")
+		self.best_div_k = float("-inf")
+		self.best_div_g= float("-inf")
+		self.best_beat_align= float("-inf")
+
+
+
 
 		hps = {"num_train_steps": self.num_train_steps,"window size":self.args.window_size,"max_seq_length": self.args.max_seq_length, "learning_rate": self.training_args.learning_rate}
 		self.accelerator.init_trackers(f"{self.model_name}", config=hps)    
@@ -226,12 +237,12 @@ class RegressorMotionTrainer(nn.Module):
 	def is_local_main(self):
 		return self.accelerator.is_local_main_process
 
-	def save(self, path):
+	def save(self, path ,loss = None ):
 		pkg = dict(
 			model = self.accelerator.get_state_dict(self.trans_model),
 			optim = self.optim.state_dict(),
 			steps = self.steps,
-			total_loss = self.best_loss,
+			total_loss = self.best_loss if loss is None else loss,
 		)
 		torch.save(pkg, path)
 
@@ -292,13 +303,17 @@ class RegressorMotionTrainer(nn.Module):
 
 			inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
 			lengths = batch["motion_lengths"]
+			total_tokens = int(sum(lengths))
+
 			logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
 				context = batch["condition"], context_mask = batch["condition_mask"])	
 					
 			loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
 
-			if not self.enable_var_len:
-				probs = torch.softmax(logits, dim=-1)
+			for i in range(self.training_args.train_bs):
+			# if not self.enable_var_len:
+
+				probs = torch.softmax(logits[i][:int(lengths[i])], dim=-1)
 
 				if self.args.sample_max:
 					_, cls_pred_index = torch.max(probs, dim=-1)
@@ -306,7 +321,10 @@ class RegressorMotionTrainer(nn.Module):
 				else:
 					dist = torch.distributions.Categorical(probs)
 					cls_pred_index = dist.sample()
-				right_num += (cls_pred_index.flatten(0) == target.flatten(0)).sum().item()
+
+				right_num += (cls_pred_index.flatten(0) == target[i][:int(lengths[i])].flatten(0)).sum().item()
+
+				# right_num += (cls_pred_index.flatten(0) == target.flatten(0)).sum().item()
 
 			
 			self.accelerator.backward(loss / self.grad_accum_every)
@@ -314,7 +332,7 @@ class RegressorMotionTrainer(nn.Module):
 			accum_log(logs, dict(
 				loss = loss/self.grad_accum_every,
 				avg_max_length = int(max(lengths)) / self.grad_accum_every,
-				accuracy = right_num/((logits.shape[0]*logits.shape[1]) * self.grad_accum_every),
+				accuracy = right_num/((total_tokens) * self.grad_accum_every),
 				))
 
 	
@@ -345,11 +363,14 @@ class RegressorMotionTrainer(nn.Module):
 		
 
 		if self.is_main and (steps % self.evaluate_every == 0):
+			print(f"validation start")
 			self.validation_step()
-			# print("test generating samples from gt motion")
-			# self.sample_render_generative(os.path.join(self.output_dir , "samples") , seq_len=self.args.window_size, num_start_indices  =-1)
+			print("calculating metrics")
+			self.calculate_metrics(logs['loss'])
+			print("rendering pred outputs")
+			self.sample_render(os.path.join(self.output_dir , "samples"))
 			print("test generating from <bos>")
-			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=-1, num_start_indices  =1)
+			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=100, num_start_indices  =1)
 			
 				
 		# save model
@@ -357,7 +378,7 @@ class RegressorMotionTrainer(nn.Module):
 		if self.is_main and not (steps % self.save_model_every) and steps>0:
 			os.makedirs(os.path.join(self.output_dir , "checkpoints" ) , exist_ok=True)
 			model_path = os.path.join(self.output_dir , "checkpoints", f'vqvae_motion.{steps}.pt')
-			self.save(model_path)
+			self.save(model_path , logs["loss"])
 
 			if float(loss) < self.best_loss :
 
@@ -371,11 +392,31 @@ class RegressorMotionTrainer(nn.Module):
 		self.steps += 1
 		return logs
 	
+	def calculate_metrics(self ,loss):
+		best_fid_k, best_fid_g,best_div_k,best_div_g,best_beat_align = evaluate_music_motion_trans(self.valid_dl,self.vqvae_model , self.trans_model)
+
+		if (best_fid_k+best_fid_g)/2 < (self.best_fid_k + self.best_fid_g)/2:
+			model_path = os.path.join(self.output_dir, f'trans_motion_best_fid.pt')
+			self.save(model_path , loss=loss)
+
+		wandb.log({f'best_fid_k': best_fid_k})  
+		wandb.log({f'best_fid_g': best_fid_g})  
+		wandb.log({f'best_div_k': best_div_k})  
+		wandb.log({f'best_div_g': best_div_g})  
+		wandb.log({f'best_beat_align': best_beat_align})  
+
+
+		self.best_fid_k, self.best_fid_g, self.best_div_k, self.best_div_g, self.best_beat_align = \
+			best_fid_k, best_fid_g, best_div_k, best_div_g, best_beat_align
+
+		
+
 	def validation_step(self):
 		self.trans_model.eval()
 		val_loss_ae = {}
 
-		print(f"validation start")
+		
+
 
 		with torch.no_grad():
 
@@ -384,12 +425,27 @@ class RegressorMotionTrainer(nn.Module):
 
 				right_num = 0
 				inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
+				lengths = batch["motion_lengths"]
+				total_tokens = int(sum(lengths))
+
 				logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
 					context = batch["condition"], context_mask = batch["condition_mask"])	
 						
 				loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
-				if not self.enable_var_len:
-					probs = torch.softmax(logits, dim=-1)
+				
+				for i in range(inp.shape[0]):
+					# probs = torch.softmax(logits, dim=-1)
+
+					# if self.args.sample_max:
+					# 	_, cls_pred_index = torch.max(probs, dim=-1)
+
+					# else:
+					# 	dist = torch.distributions.Categorical(probs)
+					# 	cls_pred_index = dist.sample()
+					# right_num += (cls_pred_index.flatten(0) == target.flatten(0)).sum().item()
+
+
+					probs = torch.softmax(logits[i][:int(lengths[i])], dim=-1)
 
 					if self.args.sample_max:
 						_, cls_pred_index = torch.max(probs, dim=-1)
@@ -397,11 +453,13 @@ class RegressorMotionTrainer(nn.Module):
 					else:
 						dist = torch.distributions.Categorical(probs)
 						cls_pred_index = dist.sample()
-					right_num += (cls_pred_index.flatten(0) == target.flatten(0)).sum().item()
+
+					right_num += (cls_pred_index.flatten(0) == target[i][:int(lengths[i])].flatten(0)).sum().item()
+
 
 				loss_dict = {
 				"total_loss": loss,
-				"accuracy":right_num/(cls_pred_index.shape[0]*cls_pred_index.shape[1])
+				"accuracy":right_num/(total_tokens)
 				}	
 			   
 				val_loss_ae.update(loss_dict)
@@ -419,6 +477,58 @@ class RegressorMotionTrainer(nn.Module):
 
 		self.trans_model.train()
 
+
+	 
+	def sample_render(self , save_path):
+
+		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
+		os.makedirs(save_file , exist_ok=True)
+
+		render_mean = self.render_ds.mean 
+		render_std = self.render_ds.std 
+
+		
+		# assert self.render_dl.batch_size == 1 , "Batch size for rendering should be 1!"
+
+		self.vqvae_model.eval()
+		self.trans_model.eval()
+		print(f"render start")
+		with torch.no_grad():
+			for batch in tqdm(self.render_dl):
+
+
+				gt_motion = batch["motion"]
+				name = str(batch["names"][0])
+
+
+				
+
+				gen_motion_indices , gt_motion_indices = get_target_indices(batch , self.trans_model)
+
+				_ , pred_motion = self.vqvae_model.module.decode(gen_motion_indices.cuda())
+				_ , gt_motion = self.vqvae_model.module.decode(gt_motion_indices.cuda())
+
+
+				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*render_std+render_mean, 22)
+				gt_motion_xyz = gt_motion_xyz.reshape(gt_motion.shape[0],-1, 22, 3)
+
+				pred_motion_xyz = recover_from_ric(pred_motion.cpu().float()*render_std+render_mean, 22)
+				pred_motion_xyz = pred_motion_xyz.reshape(pred_motion.shape[0],-1, 22, 3)
+
+				
+
+				gt_pose_vis = plot_3d.draw_to_batch(gt_motion_xyz.numpy(),None, [os.path.join(save_file,name + "_gt.gif")])
+				pred_pose_vis = plot_3d.draw_to_batch(pred_motion_xyz.numpy(),None, [os.path.join(save_file,name + "_pred.gif")])
+
+				# render(pred_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=True)
+				# render(gt_motion_xyz, outdir=save_path, step=self.steps, name=f"{name}", pred=False)
+
+			
+
+		self.trans_model.train()
+
+
+
 	def sample_render_generative(self , save_path , seq_len = 100 , num_start_indices = 1):
 
 		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
@@ -429,7 +539,7 @@ class RegressorMotionTrainer(nn.Module):
 		with torch.no_grad():
 			for batch in tqdm(self.render_dl):
 
-				gt_motion_indices = batch["motion"][:,:-1]
+				gt_motion_indices = batch["motion"][:,:seq_len]
 				if seq_len == -1:
 					seq_len = gt_motion_indices.shape[1]
 
@@ -439,8 +549,19 @@ class RegressorMotionTrainer(nn.Module):
 
 				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"])
 				
+
+				eos_index = (gen_motion_indices == self.training_args.eos_index).nonzero().flatten().tolist()
+				# print(eos_index)
+				pad_index = (gen_motion_indices == self.training_args.pad_index).nonzero().flatten().tolist()
+				# print(pad_index)
+				bos_index = (gen_motion_indices == self.training_args.bos_index).nonzero().flatten().tolist()
+				# print(bos_index)
+				stop_index = min([*eos_index , *pad_index , *bos_index, seq_len])
+
+				gen_motion_indices_ = gen_motion_indices[:int(stop_index)]
+
 				gt_motion_indices_ = gt_motion_indices[gt_motion_indices<self.training_args.bos_index]
-				gen_motion_indices_ = gen_motion_indices[gen_motion_indices<self.training_args.bos_index]
+				# gen_motion_indices_ = gen_motion_indices[gen_motion_indices<self.training_args.bos_index]
 
 				_ , pred_motion = self.vqvae_model.module.decode(gen_motion_indices_.reshape(gt_motion_indices.shape[0],-1))
 				_ , gt_motion = self.vqvae_model.module.decode(gt_motion_indices_.reshape(gt_motion_indices.shape[0],-1))
