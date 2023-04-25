@@ -7,7 +7,7 @@ dataset:
   data_folder: "/srv/scratch/sanisetty3/music_motion/AIST"
 train:
   output_dir: "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist"
-  resume: False
+  resume: True
   num_stages : 6
   num_train_iters : 200000 #'Number of training steps
   save_steps : 5000

@@ -229,7 +229,7 @@ class MotionRegressorModel(nn.Module):
 		super(MotionRegressorModel , self).__init__()
 
 		self.device = device
-		self.pad_index = pad_value
+		self.pad_value = pad_value
 		self.args = args
 		self.max_seq_len = None
 
@@ -241,7 +241,7 @@ class MotionRegressorModel(nn.Module):
 		# num_tokens = args.num_tokens,
 		# cond_dim  =args.music_dim,
 		# scaled_sinu_pos_emb = True,
-		# pad_idx=self.pad_index,
+		# pad_idx=self.pad_value,
 		# attn_layers = Decoder(
 		# 	cross_attn_tokens_dropout = 0.3,
 		# 	cross_attend = True,

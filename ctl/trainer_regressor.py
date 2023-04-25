@@ -12,11 +12,11 @@ from torchvision import transforms
 import itertools
 from transformers import AdamW, get_scheduler
 from accelerate import Accelerator
-from accelerate.utils import DistributedDataParallelKwargs
+from accelerate.utils import DistributedDataParallelKwargs,InitProcessGroupKwargs
 from accelerate import DistributedType
 import wandb
 import transformers
-
+from datetime import timedelta
 from core.optimizer import get_optimizer
 from render_final import render
 from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator,VQVarLenMotionDatasetConditional, TransMotionDatasetConditional, MotionCollatorConditional
@@ -89,7 +89,8 @@ class RegressorMotionTrainer(nn.Module):
 		super().__init__()
 
 		kwargs = DistributedDataParallelKwargs(find_unused_parameters = True)
-		self.accelerator = Accelerator(kwargs_handlers = [kwargs], **accelerate_kwargs)
+		initkwargs = InitProcessGroupKwargs(timeout = timedelta(seconds=6000))
+		self.accelerator = Accelerator(kwargs_handlers = [kwargs,initkwargs], **accelerate_kwargs)
 
 		transformers.set_seed(42)
 
@@ -360,7 +361,20 @@ class RegressorMotionTrainer(nn.Module):
 
 		self.print(losses_str)
 
-		
+		if self.is_main and not (steps % self.save_model_every) and steps>0:
+			os.makedirs(os.path.join(self.output_dir , "checkpoints" ) , exist_ok=True)
+			model_path = os.path.join(self.output_dir , "checkpoints", f'trans_motion.{steps}.pt')
+			self.save(model_path , logs["loss"])
+
+			if float(loss) < self.best_loss :
+
+				model_path = os.path.join(self.output_dir, f'trans_motion.pt')
+				self.save(model_path)
+				self.best_loss = loss
+
+			self.print(f'{steps}: saving model to {str(os.path.join(self.output_dir , "checkpoints") )}')
+
+
 
 		if self.is_main and (steps % self.evaluate_every == 0):
 			print(f"validation start")
@@ -368,27 +382,15 @@ class RegressorMotionTrainer(nn.Module):
 			print("calculating metrics")
 			self.calculate_metrics(logs['loss'])
 			print("rendering pred outputs")
-			self.sample_render(os.path.join(self.output_dir , "samples"))
-			print("test generating from <bos>")
-			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=100, num_start_indices  =1)
-			
+			# self.sample_render(os.path.join(self.output_dir , "samples"))
+			# print("test generating from <bos>")
+			# self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=100, num_start_indices  =1)
+
+		# self.accelerator.wait_for_everyone()
 				
 		# save model
 		
-		if self.is_main and not (steps % self.save_model_every) and steps>0:
-			os.makedirs(os.path.join(self.output_dir , "checkpoints" ) , exist_ok=True)
-			model_path = os.path.join(self.output_dir , "checkpoints", f'vqvae_motion.{steps}.pt')
-			self.save(model_path , logs["loss"])
-
-			if float(loss) < self.best_loss :
-
-				model_path = os.path.join(self.output_dir, f'vqvae_motion.pt')
-				self.save(model_path)
-				self.best_loss = loss
-
-			self.print(f'{steps}: saving model to {str(os.path.join(self.output_dir , "checkpoints") )}')
-
-
+		
 		self.steps += 1
 		return logs
 	
@@ -527,6 +529,21 @@ class RegressorMotionTrainer(nn.Module):
 
 		self.trans_model.train()
 
+	
+	def process_gen_output(self , gen_motion_indices , seq_len):
+		eos_index = (gen_motion_indices == self.training_args.eos_index).nonzero().flatten().tolist()
+		# print(eos_index)
+		pad_index = (gen_motion_indices == self.training_args.pad_index).nonzero().flatten().tolist()
+		# print(pad_index)
+		bos_index = (gen_motion_indices == self.training_args.bos_index).nonzero().flatten().tolist()
+		# print(bos_index)
+		stop_index = min([*eos_index , *pad_index , *bos_index, seq_len])
+
+		gen_motion_indices_ = gen_motion_indices[:int(stop_index)]
+
+		return gen_motion_indices_
+
+
 
 
 	def sample_render_generative(self , save_path , seq_len = 100 , num_start_indices = 1):
@@ -547,38 +564,31 @@ class RegressorMotionTrainer(nn.Module):
 				name = batch["names"]
 				start_tokens = gt_motion_indices[:,:num_start_indices]
 
-				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"])
+				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"], eos_token = self.training_args.eos_index)
 				
-
-				eos_index = (gen_motion_indices == self.training_args.eos_index).nonzero().flatten().tolist()
-				# print(eos_index)
-				pad_index = (gen_motion_indices == self.training_args.pad_index).nonzero().flatten().tolist()
-				# print(pad_index)
-				bos_index = (gen_motion_indices == self.training_args.bos_index).nonzero().flatten().tolist()
-				# print(bos_index)
-				stop_index = min([*eos_index , *pad_index , *bos_index, seq_len])
-
-				gen_motion_indices_ = gen_motion_indices[:int(stop_index)]
+				gen_motion_indices_ = self.process_gen_output(gen_motion_indices , seq_len)
 
 				gt_motion_indices_ = gt_motion_indices[gt_motion_indices<self.training_args.bos_index]
-				# gen_motion_indices_ = gen_motion_indices[gen_motion_indices<self.training_args.bos_index]
 
 				_ , pred_motion = self.vqvae_model.module.decode(gen_motion_indices_.reshape(gt_motion_indices.shape[0],-1))
 				_ , gt_motion = self.vqvae_model.module.decode(gt_motion_indices_.reshape(gt_motion_indices.shape[0],-1))
 
 
+				try:
 
-				gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
-				gt_motion_xyz = gt_motion_xyz.reshape(gt_motion.shape[0],-1, 22, 3)
+					gt_motion_xyz = recover_from_ric(gt_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
+					gt_motion_xyz = gt_motion_xyz.reshape(gt_motion.shape[0],-1, 22, 3)
 
-				pred_motion_xyz = recover_from_ric(pred_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
-				pred_motion_xyz = pred_motion_xyz.reshape(pred_motion.shape[0],-1, 22, 3)
+					pred_motion_xyz = recover_from_ric(pred_motion.cpu().float()*self.render_ds.std+self.render_ds.mean, 22)
+					pred_motion_xyz = pred_motion_xyz.reshape(pred_motion.shape[0],-1, 22, 3)
 
-				
+					
 
-				gt_pose_vis = plot_3d.draw_to_batch(gt_motion_xyz.numpy(),None, [os.path.join(save_file,name[0] + "_gt.gif")])
-				pred_pose_vis = plot_3d.draw_to_batch(pred_motion_xyz.numpy(),None, [os.path.join(save_file,name[0] + "_pred.gif")])
-
+					gt_pose_vis = plot_3d.draw_to_batch(gt_motion_xyz.numpy(),None, [os.path.join(save_file,name[0] + "_gt.gif")])
+					pred_pose_vis = plot_3d.draw_to_batch(pred_motion_xyz.numpy(),None, [os.path.join(save_file,name[0] + "_pred.gif")])
+				except:
+					print("ERROR cant render motion gt_motion shape", gt_motion.shape , "pred_motion shape: ", pred_motion.shape)
+					continue
 
 		self.trans_model.train()
 
