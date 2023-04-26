@@ -382,9 +382,9 @@ class RegressorMotionTrainer(nn.Module):
 			print("calculating metrics")
 			self.calculate_metrics(logs['loss'])
 			print("rendering pred outputs")
-			# self.sample_render(os.path.join(self.output_dir , "samples"))
-			# print("test generating from <bos>")
-			# self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=100, num_start_indices  =1)
+			self.sample_render(os.path.join(self.output_dir , "samples"))
+			print("test generating from <bos>")
+			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=100, num_start_indices  =1)
 
 		# self.accelerator.wait_for_everyone()
 				

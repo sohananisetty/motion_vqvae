@@ -45,7 +45,7 @@ vqvae:
 motion_trans:
   music_dim : 128
   num_tokens : 1027
-  max_length_seconds : 30
+  max_length_seconds : 20
   min_length_seconds : 5
   window_size : 100
   dec_dim : 768 
