@@ -108,7 +108,7 @@ class RegressorMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = list(np.linspace(0,self.num_train_steps, self.num_stages , dtype = np.uint))
+		self.stage_steps = list(np.linspace(0,200000, self.num_stages , dtype = np.uint))
 		print("stage_steps: " , self.stage_steps )
 		self.stage = 0
 
@@ -546,7 +546,7 @@ class RegressorMotionTrainer(nn.Module):
 
 
 
-	def sample_render_generative(self , save_path , seq_len = 100 , num_start_indices = 1):
+	def sample_render_generative(self , save_path , seq_len = 400 , num_start_indices = 1):
 
 		save_file = os.path.join(save_path , f"{int(self.steps.item())}")
 		os.makedirs(save_file , exist_ok=True)
@@ -564,7 +564,7 @@ class RegressorMotionTrainer(nn.Module):
 				name = batch["names"]
 				start_tokens = gt_motion_indices[:,:num_start_indices]
 
-				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"], eos_token = self.training_args.eos_index)
+				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"])
 				
 				gen_motion_indices_ = self.process_gen_output(gen_motion_indices , seq_len)
 
@@ -605,7 +605,7 @@ class RegressorMotionTrainer(nn.Module):
 			print("resuming from ", os.path.join(save_path, f'{chk}'))
 			self.load(os.path.join(save_path , f"{chk}"))
 
-		while self.steps < self.num_train_steps:
+		while self.steps <= self.num_train_steps:
 			logs = self.train_step()
 			log_fn(logs)
 

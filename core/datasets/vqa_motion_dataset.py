@@ -875,8 +875,8 @@ class TransMotionDatasetConditionalFull(data.Dataset):
         for name in tqdm(self.id_list):
             try:
                 motion = np.load(os.path.join(self.motion_dir, name + '.npy'))
-                if motion.shape[0] < self.window_size:
-                    continue
+                # if motion.shape[0] < self.window_size:
+                #     continue
     
 
                 if self.dataset_name in ["t2m" , "kit"]:
@@ -972,20 +972,20 @@ class TransMotionDatasetConditionalFull(data.Dataset):
 
 
         if self.window_size==-1:
-            motion = (motion - self.mean) / self.std
+            # motion = (motion - self.mean) / self.std
             return motion ,self.id_list[item], condition
         
         if motion_len < self.window_size:
             
             diff =self.window_size - motion_len
             # print(motion.shape ,np.zeros((diff,motion.shape[1])).shape )
-            motion = (motion - self.mean) / self.std
+            # motion = (motion - self.mean) / self.std
             motion = np.concatenate((motion,  np.zeros((diff,motion.shape[1]))) , 0)
 
         else:
             motion = motion[:self.window_size]
             motion_len = self.window_size
-            motion = (motion - self.mean) / self.std
+            # motion = (motion - self.mean) / self.std
 
 
         window_size = min(self.window_size , (motion).shape[0])

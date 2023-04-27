@@ -309,7 +309,7 @@ class MotionRegressorModel(nn.Module):
 
 		out = start_tokens
 
-		for sl in tqdm(range(seq_len)):
+		for sl in tqdm(range(seq_len) ,  position=0, leave=True):
 
 			x = out
 
@@ -323,8 +323,10 @@ class MotionRegressorModel(nn.Module):
 			elif filter_logits_fn is top_a:
 				filtered_logits = filter_logits_fn(logits, min_p_pow = min_p_pow, min_p_ratio= min_p_ratio)
 				probs = F.softmax(filtered_logits / temperature, dim=-1)
+    
+			# print(probs.shape)
 
-			sample = torch.multinomial(probs, 1)
+			sample = torch.multinomial(probs[:,:1024], 1)
 
 			out = torch.cat((out, sample), dim=-1)
 
