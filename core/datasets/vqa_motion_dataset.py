@@ -10,6 +10,20 @@ from torch.utils.data.dataloader import default_collate
 from glob import glob
 import clip
 
+genre_dict = {
+    "mBR" : "Break",
+    "mPO" : "Pop",
+    "mLO" : "Lock",
+    "mMH" : "Middle Hip-hop",
+    "mLH" : "LA style Hip-hop",
+    "mHO" : "House",    
+    "mWA" : "Waack",
+    "mKR" : "Krump",
+    "mJS" : "Street Jazz",
+    "mJB" : "Ballet Jazz",
+}
+
+
 class MotionCollator():
     def __init__(self):
         self.bos = torch.LongTensor(([0]))
@@ -47,7 +61,6 @@ class MotionCollator():
 
    
         return batch    
-
 
 class MotionCollatorConditional():
     def __init__(self, dataset_name = "t2m" , clip_model = None , bos = 0 , eos = 2 , pad = 1):
@@ -113,8 +126,209 @@ class MotionCollatorConditional():
             "motion_lengths": torch.Tensor(motion_lengths),## b
             "motion_mask" : torch.stack(pad_batch_mask , 0),## b seq_len+1
             "names" : np.array(names),## b 
-            "condition" : condition_embeddings,## b seq_len
+            "condition" : condition_embeddings.float(),## b seq_len
             "condition_mask" : torch.stack(condition_batch_masks , 0),## b seq_len
+
+        }
+
+   
+        return batch    
+    
+# class MotionCollatorConditional():
+#     def __init__(self, dataset_name = "t2m" , clip_model = None , bos = 0 , eos = 2 , pad = 1):
+        
+#         if not isinstance(dataset_name , list):
+#             dataset_name = [dataset_name]
+            
+#         self.dataset_name = dataset_name
+#         self.clip_model = clip_model
+#         self.bos = torch.LongTensor(([bos]))
+#         self.eos = torch.LongTensor(([eos]))
+#         self.pad = torch.LongTensor(([pad]))
+        
+
+#     def __call__(self, samples):
+        
+
+#         pad_batch_inputs = []
+#         pad_batch_mask = []
+#         condition_batch_masks = []
+#         motion_lengths = []
+#         condition_list = []
+#         names = []
+#         genre_list = []
+#         max_len = max([sample.shape[0] for sample, _,_ in samples])
+        
+        
+        
+
+
+#         for inp,name,condition in samples:
+#             n = inp.shape[0]
+#             diff = max_len - n
+#             mask = torch.BoolTensor([1]*(n+1) + [0]*diff)
+#             padded = torch.concatenate(
+#                 (
+#                  torch.LongTensor(inp) , 
+#                  self.eos,
+#                  torch.ones((diff) , dtype = torch.long)*self.pad ) 
+#                  )
+#             pad_batch_inputs.append(padded)
+#             pad_batch_mask.append(mask)
+#             motion_lengths.append(n)
+#             names.append(name)
+#             if "aist" in self.dataset_name:
+#                 music_encoding = condition
+               
+#                 condition_padded = torch.concatenate(
+#                     (
+#                      torch.tensor(music_encoding) ,
+#                      torch.ones((diff,condition.shape[-1]))*self.pad,
+                     
+#                      ))
+#                 c_mask = torch.BoolTensor([1]*(n) + [0]*diff)
+#                 condition_list.append(condition_padded)
+#                 condition_batch_masks.append(c_mask)
+#                 genre_list.append(genre_dict.get(name.split("_")[-2][:3] , "Dance"))
+#             elif self.dataset_name in ["t2m" , "kit"]:
+#                 condition_list.append(str(condition))
+#                 condition_batch_masks.append(mask)
+
+
+
+#         motion = torch.stack(pad_batch_inputs , 0)
+#         motion_lengths = torch.Tensor(motion_lengths)
+#         motion_mask=  torch.stack(pad_batch_mask , 0)
+#         names =  np.array(names)
+        
+        
+#         # if self.dataset_name in ["t2m" , "kit"]:
+#         if any(item in self.dataset_name  for item in ["t2m" , "kit"]):
+#             text = clip.tokenize(condition_list, truncate=True).cuda()
+#             style_embeddings = self.clip_model.encode_text(text).cpu().float() if self.clip_model is not None else None
+#             condition_embeddings = motion[:,:-1].float()
+#             condition_mask = motion_mask[:,:-1]
+            
+            
+
+#         elif "aist" in self.dataset_name:
+            
+#             condition_embeddings = torch.stack(condition_list , 0).float()
+#             condition_mask =  torch.stack(condition_batch_masks , 0)
+            
+       
+        
+        
+
+        
+#         batch = {
+#             "motion": motion, ## b seq_len+1
+#             "motion_lengths": motion_lengths,## b
+#             "motion_mask" : motion_mask,## b seq_len+1
+#             "names" : names,## b 
+#             "condition" : condition_embeddings,## b seq_len
+#             "condition_mask" : condition_mask,## b seq_len
+
+#         }
+
+   
+#         return batch    
+    
+
+
+class MotionCollatorConditionalStyle():
+    def __init__(self , clip_model = None , bos = 0 , eos = 2 , pad = 1):
+        
+
+        self.clip_model = clip_model
+        self.bos = torch.LongTensor(([bos]))
+        self.eos = torch.LongTensor(([eos]))
+        self.pad = torch.LongTensor(([pad]))
+        
+
+    def __call__(self, samples):
+        
+
+        pad_batch_inputs = []
+        pad_batch_mask = []
+        condition_list = []
+        condition_batch_masks = []
+        motion_lengths = []
+        style_embeddings = []
+        names = []
+        max_len = max([sample.shape[0] for sample, _,_ in samples])
+        
+        
+        
+
+
+        for inp,name,condition in samples:
+            
+            if len(name.split("_")) > 2:
+                dataset_name = "aist"
+            else:
+                dataset_name = "t2m"
+                
+            n = inp.shape[0]
+            diff = max_len - n
+            mask = torch.BoolTensor([1]*(n+1) + [0]*diff)
+            padded = torch.concatenate(
+                (
+                 torch.LongTensor(inp) , 
+                 self.eos,
+                 torch.ones((diff) , dtype = torch.long)*self.pad ) 
+                 )
+            pad_batch_inputs.append(padded)
+            pad_batch_mask.append(mask)
+            motion_lengths.append(n)
+            names.append(name)
+            
+            if dataset_name == "aist" :
+                music_encoding = condition
+               
+                condition_padded = torch.concatenate(
+                    (
+                     torch.tensor(music_encoding) ,
+                     torch.ones((diff,condition.shape[-1]))*self.pad,
+                     
+                     ))
+                c_mask = torch.BoolTensor([1]*(n) + [0]*diff)
+                
+                condition_list.append(condition_padded)
+                condition_batch_masks.append(c_mask)
+                genre = (genre_dict.get(name.split("_")[-2][:3] , ""))
+                genre = random.choice([genre , genre + " dance"])
+                
+                text = clip.tokenize([genre], truncate=True).cuda()
+                style_embeddings.append(self.clip_model.encode_text(text).cpu().float().reshape(-1) if self.clip_model is not None else None)
+                
+            elif dataset_name in ["t2m" , "kit"]:
+    
+                condition_list.append(padded[:-1])
+                condition_batch_masks.append(mask[:-1])
+                
+                text = clip.tokenize([str(condition)], truncate=True).cuda()
+                style_embeddings.append(self.clip_model.encode_text(text).cpu().float().reshape(-1) if self.clip_model is not None else None)
+
+
+
+        motion = torch.stack(pad_batch_inputs , 0)
+        motion_lengths = torch.Tensor(motion_lengths)
+        motion_mask=  torch.stack(pad_batch_mask , 0)
+        names =  np.array(names)
+        condition_embeddings = torch.stack(condition_list , 0).float()
+        condition_mask =  torch.stack(condition_batch_masks , 0)
+        style_embeddings =  torch.stack(style_embeddings , 0)
+        
+        
+        batch = {
+            "motion": motion, ## b seq_len+1
+            "motion_lengths": motion_lengths,## b
+            "motion_mask" : motion_mask,## b seq_len+1
+            "names" : names,## b 
+            "condition" : condition_embeddings.float(),## b seq_len
+            "condition_mask" : condition_mask,## b seq_len
+            "style":style_embeddings.float(),
 
         }
 
@@ -444,11 +658,9 @@ class VQVarLenMotionDataset(data.Dataset):
 
     
 class TransMotionDatasetConditional(data.Dataset):
-    def __init__(self, dataset_name, data_root, window_size = 60 , datafolder = "joint_indices" ,w_vectorizer = None, max_length_seconds = 60, fps = 20, split = "train" , max_text_len = 20 , force_len = False):
+    def __init__(self, dataset_name, data_root, window_size = 60 , datafolder = "joint_indices" ,musicfolder = "music" ,w_vectorizer = None, fps = 20, split = "train" , max_text_len = 20 , force_len = False):
         self.fps = fps
         self.window_size  =window_size
-        self.max_length_seconds = max_length_seconds
-        self.max_motion_length = self.fps*max_length_seconds
         self.dataset_name = dataset_name
         self.split = split
         
@@ -466,7 +678,7 @@ class TransMotionDatasetConditional(data.Dataset):
         elif dataset_name == 'aist':
             self.data_root = data_root
             self.motion_dir = os.path.join(self.data_root, datafolder)
-            self.music_dir =  os.path.join(self.data_root, 'music')
+            self.music_dir =  os.path.join(self.data_root, musicfolder)
             self.joints_num = 22
             self.meta_dir = ''
             self.condition = "music"
@@ -503,7 +715,7 @@ class TransMotionDatasetConditional(data.Dataset):
         for name in tqdm(self.id_list):
             try:
                 motion = np.load(os.path.join(self.motion_dir, name + '.npy'))
-                # if motion.shape[0] < self.window_size:
+                # if motionproject_cond_emb.shape[0] < self.window_size:
                 #     continue
     
 
@@ -556,10 +768,14 @@ class TransMotionDatasetConditional(data.Dataset):
                     music_name = name.split("_")[-2]
 
                     music_encoding=  np.load(os.path.join(self.music_dir , music_name + ".npy"))
+                    
+                    
                     music_len = len(music_encoding)
                     motion_len = len(motion)
+                    
 
                     min_l = min(music_len , motion_len)
+                    
                     data_dict[name] = {'motion': motion[:min_l],
                                        'length': min_l,
                                        'music':music_encoding[:min_l]}
@@ -592,8 +808,7 @@ class TransMotionDatasetConditional(data.Dataset):
         if self.dataset_name in ["t2m" , "kit"]:
             motion, motion_len, text_list = data['motion'], data['length'], data['text']
             text_data = random.choice(text_list)
-            caption= text_data['caption']
-            condition = caption
+            condition= text_data['caption']
 
         if self.dataset_name == "aist":
             motion, motion_len, music = data['motion'], data['length'], data['music']
@@ -618,7 +833,7 @@ class TransMotionDatasetConditional(data.Dataset):
 
 
 class VQVarLenMotionDatasetConditional(data.Dataset):
-    def __init__(self, dataset_name, data_root, datafolder = "joint_indices" ,w_vectorizer = None, max_length_seconds = 60, min_length_seconds = 3, fps = 20, split = "train" , max_text_len = 20 , bert_style = False,num_stages = 6):
+    def __init__(self, dataset_name, data_root, datafolder = "joint_indices" ,musicfolder = "music" ,w_vectorizer = None, max_length_seconds = 60, min_length_seconds = 3, fps = 20, split = "train" , max_text_len = 20 , bert_style = False,num_stages = 6):
         self.fps = fps
         self.min_length_seconds = min_length_seconds
         self.max_length_seconds = max_length_seconds
@@ -647,7 +862,7 @@ class VQVarLenMotionDatasetConditional(data.Dataset):
         elif dataset_name == 'aist':
             self.data_root = data_root
             self.motion_dir = os.path.join(self.data_root, datafolder)
-            self.music_dir =  os.path.join(self.data_root, 'music')
+            self.music_dir =  os.path.join(self.data_root, musicfolder)
             self.joints_num = 22
             self.meta_dir = ''
             self.condition = "music"
@@ -816,7 +1031,7 @@ class VQVarLenMotionDatasetConditional(data.Dataset):
 
     
 class TransMotionDatasetConditionalFull(data.Dataset):
-    def __init__(self, dataset_name, data_root, window_size = 400 , datafolder = "joint_indices" ,w_vectorizer = None, max_length_seconds = 60, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
+    def __init__(self, dataset_name, data_root, window_size = 400 , datafolder = "joint_indices" ,musicfolder = "music" , w_vectorizer = None, max_length_seconds = 60, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
         self.fps = fps
         self.window_size  =window_size
         self.max_length_seconds = max_length_seconds
@@ -838,7 +1053,7 @@ class TransMotionDatasetConditionalFull(data.Dataset):
         elif dataset_name == 'aist':
             self.data_root = data_root
             self.motion_dir = os.path.join(self.data_root, datafolder)
-            self.music_dir =  os.path.join(self.data_root, 'music')
+            self.music_dir =  os.path.join(self.data_root, musicfolder)
             self.joints_num = 22
             self.meta_dir = ''
             self.condition = "music"

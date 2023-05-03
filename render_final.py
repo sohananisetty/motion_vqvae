@@ -51,9 +51,9 @@ def render(motions, outdir='test_vis', step=None, name=None, pred=True):
     motions[:, :, 1] -= height_offset
     trajec = motions[:, 0, [0, 2]]
 
-    j2s = joints2smpl(num_frames=frames, device_id=0, cuda=False)
+    j2s = joints2smpl(num_frames=frames, device_id=0, cuda=True)
     # rot2xyz = Rotation2xyz(device=torch.device("cuda:0"))
-    rot2xyz = Rotation2xyz(device=torch.device("cpu"))
+    rot2xyz = Rotation2xyz(device=torch.device("cuda"))
 
     faces = rot2xyz.smpl_model.faces
 
@@ -180,6 +180,50 @@ def render(motions, outdir='test_vis', step=None, name=None, pred=True):
         imageio.mimsave(os.path.join(outdir ,step, name+'_gt.gif'), out, fps=20)
     
 
+
+def saveSMPL(motions, outdir='test_vis', step=None, name=None, pred=True):
+    frames, njoints, nfeats = motions.shape
+    MINS = motions.min(axis=0).min(axis=0)
+    MAXS = motions.max(axis=0).max(axis=0)
+
+    height_offset = MINS[1]
+    motions[:, :, 1] -= height_offset
+    trajec = motions[:, 0, [0, 2]]
+
+    j2s = joints2smpl(num_frames=frames, device_id=0, cuda=True)
+    # rot2xyz = Rotation2xyz(device=torch.device("cuda:0"))
+    rot2xyz = Rotation2xyz(device=torch.device("cuda"))
+
+    faces = rot2xyz.smpl_model.faces
+
+           
+    fl1 = os.path.exists(os.path.join(outdir , name+'_pred.pt')) and pred
+    fl2 = os.path.exists(os.path.join(outdir , name+'_gt.pt')) and not pred
+
+    if fl1 == False and fl2 == False:
+    #(not os.path.exists(os.path.join(outdir , name+'_pred.pt')) and pred) or (not os.path.exists(outdir + name+'_gt.pt') and not pred): 
+        print(f'Running SMPLify, it may take a few minutes.')
+        motion_tensor, opt_dict = j2s.joint2smpl(motions)  # [nframes, njoints, 3]
+
+        print(motion_tensor.shape , opt_dict.keys())
+
+        vertices = rot2xyz(torch.tensor(motion_tensor).clone(), mask=None,
+                                        pose_rep='rot6d', translation=True, glob=True,
+                                        jointstype='vertices',
+                                        vertstrans=True)
+
+        if pred:
+            torch.save(vertices, os.path.join(outdir , name+'_pred.pt'))
+        else:
+            torch.save(vertices, os.path.join(outdir , name+'_gt.pt'))
+    else:
+        if pred:
+            vertices = torch.load(os.path.join(outdir , name+'_pred.pt'))
+        else:
+            vertices = torch.load(os.path.join(outdir , name+'_gt.pt'))
+    frames = vertices.shape[3] # shape: 1, nb_frames, 3, nb_joints
+    print (vertices.shape)
+    
 
 
 

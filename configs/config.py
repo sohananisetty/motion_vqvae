@@ -30,6 +30,7 @@ cfg.dataset = CN()
 cfg.dataset.dataset_name = "t2m" #"t2m or kit or aist"
 cfg.dataset.var_len = False
 cfg.dataset.data_folder =  "/srv/scratch/sanisetty3/music_motion/"
+cfg.dataset.music_folder = "music"
 cfg.dataset.fps = 20
 
 
@@ -94,6 +95,9 @@ cfg.motion_trans.dec_dim = 768 #'Encoder and Decoder dimension'
 cfg.motion_trans.depth = 12
 cfg.motion_trans.heads=8
 cfg.motion_trans.sample_max = False
+cfg.motion_trans.clip_dim = 512
+cfg.motion_trans.use_style= False
+cfg.motion_trans.mask_prob = 0
 
 
 cfg.eval_model = CN()

@@ -32,18 +32,6 @@ AMASS_JOINT_MAP = {
 amass_idx =       range(22)
 amass_smpl_idx =  range(22)
 
-KIT_JOINT_MAP = {
-'MidHip': 0,
-'LHip': 1, 'LKnee': 4, 'LAnkle': 7, 'LFoot': 10,
-'RHip': 2, 'RKnee': 5, 'RAnkle': 8, 'RFoot': 11,
-'LShoulder': 16, 'LElbow': 18, 'LWrist': 20,  
-'RShoulder': 17, 'RElbow': 19, 'RWrist': 21, 
-'spine1': 3, 'spine2': 6, 'spine3': 9,  'Neck': 12, 'Head': 15,
-'LCollar':13, 'Rcollar' :14, 
-}
-kit_idx =       range(21)
-kit_smpl_idx =  range(21)
-
 
 SMPL_MODEL_DIR = "./body_models/"
 GMM_MODEL_DIR = "./visualize/joints2smpl/smpl_models/"

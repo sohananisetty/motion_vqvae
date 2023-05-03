@@ -19,7 +19,7 @@ import transformers
 from datetime import timedelta
 from core.optimizer import get_optimizer
 from render_final import render
-from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator,VQVarLenMotionDatasetConditional, TransMotionDatasetConditional, MotionCollatorConditional
+from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator,VQVarLenMotionDatasetConditional, TransMotionDatasetConditional, MotionCollatorConditional,MotionCollatorConditionalStyle
 from tqdm import tqdm
 from collections import Counter
 import visualize.plot_3d_global as plot_3d
@@ -71,11 +71,12 @@ def has_duplicates(tup):
 
 # main trainer class
 
-class RegressorMotionTrainer(nn.Module):
+class RegressorMotionTrainerStyle(nn.Module):
 	def __init__(
 		self,
 		trans_model: MotionRegressorModel,
 		vqvae_model : VQMotionModel,
+		clip_model,
 		args,
 		training_args,
 		dataset_args,
@@ -118,8 +119,11 @@ class RegressorMotionTrainer(nn.Module):
 		self.register_buffer('steps', torch.Tensor([0]))
 		self.trans_model = trans_model
 		self.vqvae_model = vqvae_model
+		self.clip_model = clip_model
 		total = sum(p.numel() for p in self.trans_model.parameters() if p.requires_grad)
 		print("Total training params: %.2fM" % (total / 1e6))
+  
+  
 
 		
 	
@@ -141,37 +145,120 @@ class RegressorMotionTrainer(nn.Module):
 		# self.w_vectorizer = W ordVectorizer('/srv/scratch/sanisetty3/music_motion/T2M-GPT/glove', 'our_vab')
 		# self.eval_wrapper = EvaluatorModelWrapper(eval_args)
 		self.best_fid = float("-inf")
+  
+		if self.training_args.use_mixture:
 
-		if self.enable_var_len:
-			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder, window_size = 400,force_len=True)
-			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400)
+			if self.enable_var_len:
+				hml_train_ds = VQVarLenMotionDatasetConditional("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D", datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				aist_train_ds = VQVarLenMotionDatasetConditional("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				
+				train_ds = torch.utils.data.ConcatDataset([hml_train_ds, aist_train_ds])
+				weights_train = [
+				[train_ds.__len__() / (hml_train_ds.__len__())] * hml_train_ds.__len__(),
+				[train_ds.__len__() / (aist_train_ds.__len__())] * aist_train_ds.__len__(),
+				]
+	
+				weights_train = list(itertools.chain.from_iterable(weights_train))
+				sampler_train = torch.utils.data.WeightedRandomSampler(weights=weights_train, num_samples=len(weights_train))
+				print("train weights: ", train_ds.__len__() / (hml_train_ds.__len__()), train_ds.__len__() / (aist_train_ds.__len__()))
 
-			# valid_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			# self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+					
+				# hml_valid_ds = TransMotionDatasetConditional("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder, window_size = 400,force_len=True)
+				aist_valid_ds = TransMotionDatasetConditional("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , split = "val",datafolder="joint_indices_max_400", window_size = 400,force_len=True)
+				# valid_ds = torch.utils.data.ConcatDataset([hml_valid_ds, aist_valid_ds])
+				
+				# weights_valid = [
+				# [valid_ds.__len__() / (hml_valid_ds.__len__())] * hml_valid_ds.__len__(),
+				# [valid_ds.__len__() / (aist_valid_ds.__len__())] * aist_valid_ds.__len__(),
+				# ]
+				# weights_valid = list(itertools.chain.from_iterable(weights_valid))
+				# sampler_valid = torch.utils.data.WeightedRandomSampler(weights=weights_valid, num_samples=len(weights_valid))
+				# print("valid weights: ", valid_ds.__len__() / (hml_valid_ds.__len__()), valid_ds.__len__() / (aist_valid_ds.__len__()))
+
+
+
+				aist_render_ds = TransMotionDatasetConditional("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST", split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400)
+				hml_render_ds = TransMotionDatasetConditional("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , split = "render" , datafolder="joint_indices_max_400",window_size=400)
+				self.render_ds = torch.utils.data.ConcatDataset([hml_render_ds, aist_render_ds])
+
+
+   
+			else:
+       
+				hml_train_ds = TransMotionDatasetConditional("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D", datafolder="joint_indices_max_400", window_size = 400)
+				aist_train_ds = TransMotionDatasetConditional("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , window_size = 400)
+				
+				train_ds = torch.utils.data.ConcatDataset([hml_train_ds, aist_train_ds])
+				weights_train = [
+				[train_ds.__len__() / (hml_train_ds.__len__())] * hml_train_ds.__len__(),
+				[train_ds.__len__() / (aist_train_ds.__len__())] * aist_train_ds.__len__(),
+				]
+	
+				weights_train = list(itertools.chain.from_iterable(weights_train))
+				sampler_train = torch.utils.data.WeightedRandomSampler(weights=weights_train, num_samples=len(weights_train))
+				print("train weights: ", train_ds.__len__() / (hml_train_ds.__len__()), train_ds.__len__() / (aist_train_ds.__len__()))
+
+					
+				# hml_valid_ds = TransMotionDatasetConditional("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder, window_size = 400,force_len=True)
+				aist_valid_ds = TransMotionDatasetConditional("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST" , split = "val",datafolder="joint_indices_max_400", window_size = 400,force_len=True)
+				# valid_ds = torch.utils.data.ConcatDataset([hml_valid_ds, aist_valid_ds])
+				
+				# weights_valid = [
+				# [valid_ds.__len__() / (hml_valid_ds.__len__())] * hml_valid_ds.__len__(),
+				# [valid_ds.__len__() / (aist_valid_ds.__len__())] * aist_valid_ds.__len__(),
+				# ]
+				# weights_valid = list(itertools.chain.from_iterable(weights_valid))
+				# sampler_valid = torch.utils.data.WeightedRandomSampler(weights=weights_valid, num_samples=len(weights_valid))
+				# print("valid weights: ", valid_ds.__len__() / (hml_valid_ds.__len__()), valid_ds.__len__() / (aist_valid_ds.__len__()))
+
+
+
+				aist_render_ds = TransMotionDatasetConditional("aist", data_root = "/srv/scratch/sanisetty3/music_motion/AIST", split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400)
+				hml_render_ds = TransMotionDatasetConditional("t2m", data_root = "/srv/scratch/sanisetty3/music_motion/HumanML3D/HumanML3D" , split = "render" , datafolder="joint_indices_max_400",window_size=400)
+				self.render_ds = torch.utils.data.ConcatDataset([hml_render_ds, aist_render_ds])
+    
+    
+			collate_fn = MotionCollatorConditionalStyle( clip_model = clip_model, bos = self.training_args.bos_index, pad = self.training_args.pad_index, eos = self.training_args.eos_index)
+
+			self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs, sampler = sampler_train, shuffle = False, collate_fn=collate_fn)
+			self.valid_dl = DATALoader(aist_valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=collate_fn)
+			self.render_dl = DATALoader(self.render_ds , batch_size = 1, shuffle = False,collate_fn=collate_fn)
+			
+
+
+				
 		else:
+			if self.enable_var_len:
+				train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "train",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , window_size = 400)
+				self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400,force_len=True)
 
-			train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder  , window_size=self.args.window_size)
-			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
-			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
+				# valid_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+				# self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			else:
 
-		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
+				train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , window_size=self.args.window_size)
+				valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
+				self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size,force_len=True)
 
-		# dataloader
-		collate_fn = MotionCollatorConditional(dataset_name = self.dataset_args.dataset_name , bos = self.training_args.bos_index, pad = self.training_args.pad_index, eos = self.training_args.eos_index)
+			self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
-		
 
-		self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
-		self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=collate_fn)
-		self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
-		# self.valid_dl = dataset_TM_eval.DATALoader(self.dataset_name, True, self.training_args.eval_bs, self.w_vectorizer, unit_length=4)
+			# dataloader
+			collate_fn = MotionCollatorConditionalStyle(clip_model = self.clip_model , bos = self.training_args.bos_index, pad = self.training_args.pad_index, eos = self.training_args.eos_index)
+
+			
+
+			self.dl = DATALoader(train_ds , batch_size = self.training_args.train_bs,collate_fn=collate_fn)
+			self.valid_dl = DATALoader(valid_ds , batch_size = self.training_args.eval_bs, shuffle = False,collate_fn=collate_fn)
+			self.render_dl = DATALoader(self.render_ds , batch_size = 1,shuffle = False,collate_fn=collate_fn)
 		
 		# prepare with accelerator
 
 		(
 			self.trans_model,
 			self.vqvae_model,
+   			self.clip_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
@@ -180,6 +267,7 @@ class RegressorMotionTrainer(nn.Module):
 		) = self.accelerator.prepare(
 			self.trans_model,
 			self.vqvae_model,
+			self.clip_model,
 			self.optim,
 			self.dl,
 			self.valid_dl,
@@ -216,7 +304,7 @@ class RegressorMotionTrainer(nn.Module):
 			wandb.login()
 			wandb.init(project=self.model_name)
 
-		    
+			
 
 
 	def print(self, msg):
