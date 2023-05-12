@@ -133,108 +133,7 @@ class MotionCollatorConditional():
 
    
         return batch    
-    
-# class MotionCollatorConditional():
-#     def __init__(self, dataset_name = "t2m" , clip_model = None , bos = 0 , eos = 2 , pad = 1):
-        
-#         if not isinstance(dataset_name , list):
-#             dataset_name = [dataset_name]
-            
-#         self.dataset_name = dataset_name
-#         self.clip_model = clip_model
-#         self.bos = torch.LongTensor(([bos]))
-#         self.eos = torch.LongTensor(([eos]))
-#         self.pad = torch.LongTensor(([pad]))
-        
-
-#     def __call__(self, samples):
-        
-
-#         pad_batch_inputs = []
-#         pad_batch_mask = []
-#         condition_batch_masks = []
-#         motion_lengths = []
-#         condition_list = []
-#         names = []
-#         genre_list = []
-#         max_len = max([sample.shape[0] for sample, _,_ in samples])
-        
-        
-        
-
-
-#         for inp,name,condition in samples:
-#             n = inp.shape[0]
-#             diff = max_len - n
-#             mask = torch.BoolTensor([1]*(n+1) + [0]*diff)
-#             padded = torch.concatenate(
-#                 (
-#                  torch.LongTensor(inp) , 
-#                  self.eos,
-#                  torch.ones((diff) , dtype = torch.long)*self.pad ) 
-#                  )
-#             pad_batch_inputs.append(padded)
-#             pad_batch_mask.append(mask)
-#             motion_lengths.append(n)
-#             names.append(name)
-#             if "aist" in self.dataset_name:
-#                 music_encoding = condition
-               
-#                 condition_padded = torch.concatenate(
-#                     (
-#                      torch.tensor(music_encoding) ,
-#                      torch.ones((diff,condition.shape[-1]))*self.pad,
-                     
-#                      ))
-#                 c_mask = torch.BoolTensor([1]*(n) + [0]*diff)
-#                 condition_list.append(condition_padded)
-#                 condition_batch_masks.append(c_mask)
-#                 genre_list.append(genre_dict.get(name.split("_")[-2][:3] , "Dance"))
-#             elif self.dataset_name in ["t2m" , "kit"]:
-#                 condition_list.append(str(condition))
-#                 condition_batch_masks.append(mask)
-
-
-
-#         motion = torch.stack(pad_batch_inputs , 0)
-#         motion_lengths = torch.Tensor(motion_lengths)
-#         motion_mask=  torch.stack(pad_batch_mask , 0)
-#         names =  np.array(names)
-        
-        
-#         # if self.dataset_name in ["t2m" , "kit"]:
-#         if any(item in self.dataset_name  for item in ["t2m" , "kit"]):
-#             text = clip.tokenize(condition_list, truncate=True).cuda()
-#             style_embeddings = self.clip_model.encode_text(text).cpu().float() if self.clip_model is not None else None
-#             condition_embeddings = motion[:,:-1].float()
-#             condition_mask = motion_mask[:,:-1]
-            
-            
-
-#         elif "aist" in self.dataset_name:
-            
-#             condition_embeddings = torch.stack(condition_list , 0).float()
-#             condition_mask =  torch.stack(condition_batch_masks , 0)
-            
-       
-        
-        
-
-        
-#         batch = {
-#             "motion": motion, ## b seq_len+1
-#             "motion_lengths": motion_lengths,## b
-#             "motion_mask" : motion_mask,## b seq_len+1
-#             "names" : names,## b 
-#             "condition" : condition_embeddings,## b seq_len
-#             "condition_mask" : condition_mask,## b seq_len
-
-#         }
-
-   
-#         return batch    
-    
-
+ 
 
 class MotionCollatorConditionalStyle():
     def __init__(self , clip_model = None , bos = 0 , eos = 2 , pad = 1):
@@ -369,7 +268,7 @@ def simple_collate(samples):
 
 
 class VQFullMotionDataset(data.Dataset):
-    def __init__(self, dataset_name, data_root, fps = 20, split = "train", window_size = 200):
+    def __init__(self, dataset_name, data_root, fps = 20, split = "train", musicfolder = "music" , window_size = 200):
         self.fps = fps
         self.window_size = window_size
 
@@ -386,7 +285,7 @@ class VQFullMotionDataset(data.Dataset):
         if dataset_name == 'aist':
             self.data_root = data_root
             self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
-            self. music_dir = pjoin(self.data_root, 'music')
+            self. music_dir = pjoin(self.data_root, musicfolder)
             self.joints_num = 22
             self.meta_dir = ''
 

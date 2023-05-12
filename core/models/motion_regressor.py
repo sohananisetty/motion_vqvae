@@ -193,13 +193,14 @@ class MotionTokenTransformer(nn.Module):
             
         if exists(style_context):
             style_context = self.project_style_cond_emb(style_context)
+            # print("style_context" , style_context.shape)
    
                     
 
         if return_hiddens:
-            x, intermediates = self.attn_layers(x,context, mask,context_mask,attn_mask,self_attn_context_mask, return_hiddens = True, **kwargs)
+            x, intermediates = self.attn_layers(x,context, mask,context_mask,attn_mask,self_attn_context_mask, style_context = style_context, return_hiddens = True, **kwargs)
         else:
-            x = self.attn_layers(x,context, mask,context_mask,attn_mask,self_attn_context_mask, **kwargs)
+            x = self.attn_layers(x,context, mask,context_mask,attn_mask,self_attn_context_mask, style_context = style_context, **kwargs)
 
         x = self.norm(x)
 
@@ -241,60 +242,61 @@ class MotionRegressorModel(nn.Module):
         self.mask_prob = args.mask_prob
 
 
-        
-
-        # self.motionDecoder = MotionTokenTransformer(
-        # max_seq_len = args.max_seq_length,
-        # num_tokens = args.num_tokens,
-        # cond_dim  =args.music_dim,
-        # scaled_sinu_pos_emb = True,
-        # pad_idx=self.pad_value,
-        # attn_layers = Decoder(
-        # 	cross_attn_tokens_dropout = 0.3,
-        # 	cross_attend = True,
-        # 	dim = args.dec_dim,
-        # 	depth = args.depth,
-        # 	heads = args.heads,
-        # )
-        # )
-        
-        if not args.use_style:
+        if args.use_abs_pos_emb:
 
             self.motionDecoder = MotionTokenTransformer(
-            max_seq_len = None,
             num_tokens = args.num_tokens,
             cond_dim  =args.music_dim,
-            use_abs_pos_emb = False,
+            scaled_sinu_pos_emb = True,
+            pad_idx=self.pad_value,
+            use_abs_pos_emb = True,
             attn_layers = Decoder(
-                cross_attend = True,
                 cross_attn_tokens_dropout = 0.3,
-                alibi_pos_bias = True, # turns on ALiBi positional embedding
-                alibi_num_heads = 4 ,
+                cross_attend = True,
                 dim = args.dec_dim,
                 depth = args.depth,
                 heads = args.heads,
             )
             )
-        
+            
         else:
-        
-            self.motionDecoder = MotionTokenTransformer(
-            max_seq_len = None,
-            num_tokens = args.num_tokens,
-            cond_dim  =args.music_dim,
-            style_cond_dim = args.clip_dim,
-            use_abs_pos_emb = False,
-            attn_layers = Decoder(
-                cross_attend = True,
-                cross_attn_tokens_dropout = 0.3,
-                alibi_pos_bias = True, # turns on ALiBi positional embedding
-                alibi_num_heads = 4 ,
-                dim = args.dec_dim,
-                depth = args.depth,
-                heads = args.heads,
-                use_style = True,
-            )
-            )
+            if not args.use_style:
+
+                self.motionDecoder = MotionTokenTransformer(
+                max_seq_len = None,
+                num_tokens = args.num_tokens,
+                cond_dim  =args.music_dim,
+                use_abs_pos_emb = False,
+                attn_layers = Decoder(
+                    cross_attend = True,
+                    cross_attn_tokens_dropout = 0.3,
+                    alibi_pos_bias = True, # turns on ALiBi positional embedding
+                    alibi_num_heads = 4 ,
+                    dim = args.dec_dim,
+                    depth = args.depth,
+                    heads = args.heads,
+                )
+                )
+            
+            else:
+            
+                self.motionDecoder = MotionTokenTransformer(
+                max_seq_len = None,
+                num_tokens = args.num_tokens,
+                cond_dim  =args.music_dim,
+                style_cond_dim = args.clip_dim,
+                use_abs_pos_emb = False,
+                attn_layers = Decoder(
+                    cross_attend = True,
+                    cross_attn_tokens_dropout = 0.3,
+                    alibi_pos_bias = True, # turns on ALiBi positional embedding
+                    alibi_num_heads = 4 ,
+                    dim = args.dec_dim,
+                    depth = args.depth,
+                    heads = args.heads,
+                    use_style = True,
+                )
+                )
 
 
         
@@ -393,12 +395,12 @@ class MotionRegressorModel(nn.Module):
 
         b , t  = motion.shape
         
-        if self.mask_prob > 0. and self.training:
+        if self.mask_prob > 0.0 and self.training:
             rand = torch.randn(motion.shape)
             rand[:, 0] = -torch.finfo(rand.dtype).max # first token should not be masked out
             num_mask = min(int(t * self.mask_prob), t - 1)
             indices = rand.topk(num_mask, dim = -1).indices
-            token_mask = ~torch.zeros_like(motion).scatter(1, indices, 1.).bool()
+            token_mask = ~torch.zeros(motion.shape).scatter(1, indices, 1.).bool().to(motion.device)
             self_attn_context_mask =token_mask*mask
 
         logits = self.motionDecoder(x = motion, mask = mask , context = context , context_mask = context_mask,self_attn_context_mask=self_attn_context_mask , style_context = style_context)

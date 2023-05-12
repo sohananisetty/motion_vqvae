@@ -31,7 +31,7 @@ from utils.eval_trans import evaluation_vqvae_loss
 from core.models.evaluator_wrapper import EvaluatorModelWrapper
 from utils.word_vectorizer import WordVectorizer
 from core.models.motion_regressor import MotionRegressorModel,top_k
-from utils.eval_music import evaluate_music_motion_vqvae, evaluate_music_motion_trans,get_target_indices
+from utils.eval_music import evaluate_music_motion_vqvae, evaluate_music_motion_trans,get_target_indices, evaluate_music_motion_generative_style
 
 
 def exists(val):
@@ -228,6 +228,7 @@ class RegressorMotionTrainerStyle(nn.Module):
 
 				
 		else:
+			print("no mixture, enable_var_len ", self.enable_var_len)
 			if self.enable_var_len:
 				train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "train",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 				valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , window_size = 400)
@@ -393,9 +394,11 @@ class RegressorMotionTrainerStyle(nn.Module):
 			inp, target = batch["motion"][:, :-1], batch["motion"][:, 1:]
 			lengths = batch["motion_lengths"]
 			total_tokens = int(sum(lengths))
+   
+			# print(batch.keys() , batch["style"].shape)
 
 			logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
-				context = batch["condition"], context_mask = batch["condition_mask"])	
+				context = batch["condition"], context_mask = batch["condition_mask"], style_context = batch["style"])	
 					
 			loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
 
@@ -519,7 +522,7 @@ class RegressorMotionTrainerStyle(nn.Module):
 				total_tokens = int(sum(lengths))
 
 				logits = self.trans_model(motion = inp , mask = batch["motion_mask"][:,:-1]  , \
-					context = batch["condition"], context_mask = batch["condition_mask"])	
+					context = batch["condition"], context_mask = batch["condition_mask"], style_context = batch["style"])	
 						
 				loss = self.loss_fnc(logits.contiguous().view(-1, logits.shape[-1]), target.contiguous().view(-1))
 				
@@ -652,7 +655,7 @@ class RegressorMotionTrainerStyle(nn.Module):
 				name = batch["names"]
 				start_tokens = gt_motion_indices[:,:num_start_indices]
 
-				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"])
+				gen_motion_indices = self.trans_model.module.generate(start_tokens = start_tokens, seq_len=seq_len , context = batch["condition"], context_mask = batch["condition_mask"], style_context = batch["style"])
 				
 				gen_motion_indices_ = self.process_gen_output(gen_motion_indices , seq_len)
 

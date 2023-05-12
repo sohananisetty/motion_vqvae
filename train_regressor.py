@@ -39,16 +39,32 @@ def main():
 
 if __name__ == '__main__':
 
-   
+   ### ALBI 35 no style
+    # cfg = get_cfg_defaults()
+    # print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_35/var_len_768_768_aist_35.yaml")
+    # cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_35/var_len_768_768_aist_35.yaml")
+    # cfg.freeze()
+    # print("\n cfg: \n", cfg)
+    
+    
+    
+    
+    ### Sinusoidal 128 no style
+    
+    # cfg = get_cfg_defaults()
+    # print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_sine_aist/var_len_768_768_sine_aist.yaml")
+    # cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_sine_aist/var_len_768_768_sine_aist.yaml")
+    # cfg.freeze()
+    # print("\n cfg: \n", cfg)
+
+    ### Mask prob 50
+    
     cfg = get_cfg_defaults()
-    print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_35/var_len_768_768_aist_35.yaml")
-    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_35/var_len_768_768_aist_35.yaml")
+    print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml")
+    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml")
     cfg.freeze()
     print("\n cfg: \n", cfg)
 
-    # cfg_vq = get_cfg_defaults()
-    # cfg_vq.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/configs/var_len_768_768_aist.yaml")
-    ##
 
 
     

@@ -145,7 +145,7 @@ class RegressorMotionTrainer(nn.Module):
 		if self.enable_var_len:
 			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder, window_size = 400,force_len=True)
-			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400)
+			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400, force_len=True)
 
 			# valid_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 			# self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
@@ -383,8 +383,8 @@ class RegressorMotionTrainer(nn.Module):
 			self.calculate_metrics(logs['loss'])
 			print("rendering pred outputs")
 			self.sample_render(os.path.join(self.output_dir , "samples"))
-			print("test generating from <bos>")
-			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=100, num_start_indices  =1)
+			# print("test generating from <bos>")
+			# self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=400, num_start_indices  =1)
 
 		# self.accelerator.wait_for_everyone()
 				

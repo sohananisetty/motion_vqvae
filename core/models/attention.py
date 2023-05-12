@@ -371,7 +371,7 @@ class AttentionLayers(nn.Module):
         norm_fn = partial(norm_class, dim)
 
 
-        if cross_attend and not only_cross:
+        if cross_attend and not use_style and not only_cross:
             default_block = ('a', 'c', 'f')
         elif cross_attend and use_style and not only_cross:
             default_block = ('a' , 'c', 's', 'f')
@@ -527,7 +527,6 @@ class StyleNorm(nn.Module):
         norm = torch.norm(x, dim = -1, keepdim = True) * self.scale
         return x / norm.clamp(min = self.eps) * style
 
-
 class ReluSquared(nn.Module):
     def forward(self, x):
         return F.relu(x) ** 2
@@ -601,8 +600,6 @@ class Scale(nn.Module):
 
         return (scale_fn(out[0]), *out[1:])
     
-
-
 class ScaleNorm(nn.Module):
     def __init__(self, dim, eps = 1e-5):
         super().__init__()
@@ -640,7 +637,6 @@ class Residual(nn.Module):
             residual = residual * self.scale_residual_constant
 
         return x + residual
-
 
 class AbsolutePositionalEmbedding(nn.Module):
     def __init__(self, dim, max_seq_len, l2norm_embed = False):

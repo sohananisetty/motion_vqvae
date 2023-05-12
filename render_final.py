@@ -238,9 +238,9 @@ if __name__ == "__main__":
     filedir = args.filedir
     
     for filename in filename_list:
-        motions = np.load(filedir + filename+'_pred.npy')
-        print('pred', motions.shape, filename)
-        render(motions[0], outdir=filedir, device_id=0, name=filename, pred=True)
+        # motions = np.load(filedir + filename+'_pred.npy')
+        # print('pred', motions.shape, filename)
+        # render(motions[0], outdir=filedir, device_id=0, name=filename, pred=True)
 
         motions = np.load(filedir + filename+'_gt.npy')
         print('gt', motions.shape, filename)

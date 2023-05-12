@@ -80,7 +80,6 @@ class VQVAEMotionTrainer(nn.Module):
 		eval_args,
 		model_name = "",
 		apply_grad_penalty_every = 4,
-		valid_frac = 0.01,
 		max_grad_norm = 0.5,
 		accelerate_kwargs: dict = dict(),
 	):
@@ -105,7 +104,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = list(np.linspace(200000,self.num_train_steps, self.num_stages , dtype = np.uint))
+		self.stage_steps = list(np.linspace(0,self.num_train_steps, self.num_stages , dtype = np.uint))
 		print("stage_steps: " , self.stage_steps )
 		self.stage = 0
 
@@ -304,7 +303,7 @@ class VQVAEMotionTrainer(nn.Module):
 
 		if self.is_main:
 			wandb.login()
-			wandb.init(project="vqvae_768_768_vl_mix")
+			wandb.init(project=self.model_name)
 
 		    
 

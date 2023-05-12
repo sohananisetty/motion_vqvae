@@ -97,7 +97,8 @@ cfg.motion_trans.heads=8
 cfg.motion_trans.sample_max = False
 cfg.motion_trans.clip_dim = 512
 cfg.motion_trans.use_style= False
-cfg.motion_trans.mask_prob = 0
+cfg.motion_trans.use_abs_pos_emb= False
+cfg.motion_trans.mask_prob = 0.0
 
 
 cfg.eval_model = CN()
