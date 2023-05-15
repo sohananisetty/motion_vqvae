@@ -5,6 +5,7 @@ checkpoints/*
 pretrained/*
 logs/*
 body_models/*
+paper_renders/*
 
 
 !checkpoints/.gitkeep 

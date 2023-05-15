@@ -17,6 +17,7 @@ cfg.device = 'cuda'
 
 cfg.vqvae_model_name = "vqvae"
 cfg.motion_trans_model_name = "trans"
+cfg.extractors_model_name= "aist_extractor_GRU"
 
 cfg.pretrained_modelpath = os.path.join(cfg.abs_dir, f"checkpoints/{cfg.vqvae_model_name}/vqvae_motion.pt")
 cfg.output_dir = os.path.join(cfg.abs_dir , "checkpoints/")
@@ -128,6 +129,18 @@ cfg.eval_model.dim_movement_enc_hidden = 512
 cfg.eval_model.dim_movement2_dec_hidden = 512
 cfg.eval_model.dim_movement_dec_hidden= 512
 cfg.eval_model.dim_movement_latent = 512
+
+
+cfg.extractor = CN()
+cfg.extractor.motion_input_size = 263
+cfg.extractor.music_input_size = 128
+cfg.extractor.hidden_size = 768
+cfg.extractor.output_size = 128
+cfg.extractor.window_size = 100
+cfg.extractor.max_length_seconds = 30
+cfg.extractor.min_length_seconds = 3
+cfg.extractor.max_seq_length = cfg.extractor.max_length_seconds*cfg.dataset.fps
+
 
 
 def get_cfg_defaults():

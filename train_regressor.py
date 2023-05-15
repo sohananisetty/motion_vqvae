@@ -38,7 +38,19 @@ def main():
 
 
 if __name__ == '__main__':
+    
+    encodec_cfg_path = "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist/var_len_768_768_aist.yaml"
+    librosa_cfg_path = "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_35/var_len_768_768_aist_35.yaml"
+    encodec_sine_cfg_path = "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_sine_aist/var_len_768_768_sine_aist.yaml"
+    encodec_mask_cfg_path = "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml"
 
+
+    cfg = get_cfg_defaults()
+    print("loading config from:" , encodec_cfg_path)
+    cfg.merge_from_file(encodec_cfg_path)
+    cfg.freeze()
+    print("\n cfg: \n", cfg)
+    
    ### ALBI 35 no style
     # cfg = get_cfg_defaults()
     # print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_35/var_len_768_768_aist_35.yaml")
@@ -59,13 +71,14 @@ if __name__ == '__main__':
 
     ### Mask prob 50
     
-    cfg = get_cfg_defaults()
-    print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml")
-    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml")
-    cfg.freeze()
-    print("\n cfg: \n", cfg)
+    # cfg = get_cfg_defaults()
+    # print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml")
+    # cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/generator/var_len/trans_768_768_albi_aist_mask_prob50/trans_768_768_albi_aist_mask_prob50.yaml")
+    # cfg.freeze()
+    # print("\n cfg: \n", cfg)
 
-
+    ##Default
+   
 
     
     main()

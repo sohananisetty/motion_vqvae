@@ -930,7 +930,7 @@ class VQVarLenMotionDatasetConditional(data.Dataset):
 
     
 class TransMotionDatasetConditionalFull(data.Dataset):
-    def __init__(self, dataset_name, data_root, window_size = 400 , datafolder = "joint_indices" ,musicfolder = "music" , w_vectorizer = None, max_length_seconds = 60, fps = 20, split = "train" , max_text_len = 20 , bert_style = False):
+    def __init__(self, dataset_name, data_root, window_size = 400 , datafolder = "joint_indices" ,musicfolder = "music" , w_vectorizer = None, max_length_seconds = 60, fps = 20, split = "train" , max_text_len = 20 ):
         self.fps = fps
         self.window_size  =window_size
         self.max_length_seconds = max_length_seconds
@@ -1117,6 +1117,11 @@ class TransMotionDatasetConditionalFull(data.Dataset):
 
 
     
+
+
+
+
+
 
 def DATALoader(
             dataset,

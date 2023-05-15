@@ -331,7 +331,7 @@ def evaluate_music_motion_generative(
 		try:
 			out_motion = torch.zeros((aist_batch["motion"].shape[0] ,gen_motion_indices.shape[-1] , aist_batch["motion"].shape[-1]))
 			for i in range(0 , seq_len, 200):
-				quant , out_motion_= vqvae_model.decode(gen_motion_indices[:,i:i+200])
+				quant , out_motion_= vqvae_model.module.decode(gen_motion_indices[:,i:i+200])
 				out_motion[:,i:i+200] = out_motion_
 
 			# quant , out_motion = vqvae_model.module.decode(gen_motion_indices[:,:mot_len])
@@ -463,7 +463,7 @@ def evaluate_music_motion_generative_style(
 		try:
 			out_motion = torch.zeros((aist_batch["motion"].shape[0] ,gen_motion_indices.shape[-1] , aist_batch["motion"].shape[-1]))
 			for i in range(0 , seq_len, 200):
-				quant , out_motion_= vqvae_model.decode(gen_motion_indices[:,i:i+200])
+				quant , out_motion_= vqvae_model.module.decode(gen_motion_indices[:,i:i+200])
 				out_motion[:,i:i+200] = out_motion_
 
 			# quant , out_motion = vqvae_model.module.decode(gen_motion_indices[:,:mot_len])
@@ -600,7 +600,7 @@ def evaluate_music_motion_generative_style2(
 		try:
 			out_motion = torch.zeros((aist_batch["motion"].shape[0] ,gen_motion_indices.shape[-1] , aist_batch["motion"].shape[-1]))
 			for i in range(0 , seq_len, 200):
-				quant , out_motion_= vqvae_model.decode(gen_motion_indices[:,i:i+200])
+				quant , out_motion_= vqvae_model.module.decode(gen_motion_indices[:,i:i+200])
 				out_motion[:,i:i+200] = out_motion_
 
 			# quant , out_motion = vqvae_model.module.decode(gen_motion_indices[:,:mot_len])
