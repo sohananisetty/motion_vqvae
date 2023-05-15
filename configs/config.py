@@ -140,7 +140,7 @@ cfg.extractor.window_size = 100
 cfg.extractor.max_length_seconds = 30
 cfg.extractor.min_length_seconds = 3
 cfg.extractor.max_seq_length = cfg.extractor.max_length_seconds*cfg.dataset.fps
-
+cfg.extractor.temperature = 1.0
 
 
 def get_cfg_defaults():

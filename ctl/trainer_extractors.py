@@ -5,6 +5,8 @@ import os
 import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
+
 from torch.utils.data import Dataset, DataLoader, random_split
 
 from PIL import Image
@@ -22,20 +24,9 @@ from render_final import render
 from core.datasets.vqa_motion_dataset import VQMotionDataset,DATALoader,VQVarLenMotionDataset,MotionCollator,VQVarLenMotionDatasetConditional, TransMotionDatasetConditional, MotionCollatorConditional
 from tqdm import tqdm
 from collections import Counter
-import visualize.plot_3d_global as plot_3d
-from core.datasets import dataset_TM_eval
-from core.models.vqvae import VQMotionModel
-from core.models.loss import ReConsLoss
-from utils.motion_process import recover_from_ric
-from utils.eval_trans import evaluation_vqvae_loss
-from core.models.evaluator_wrapper import EvaluatorModelWrapper
-from utils.word_vectorizer import WordVectorizer
-from core.models.motion_regressor import MotionRegressorModel,top_k
-from utils.eval_music import evaluate_music_motion_vqvae, evaluate_music_motion_trans,get_target_indices
 
-
-from core.models.eval_modules import MotionEncoderBiGRUCo
-from core.models.loss import ContrastiveLoss
+from core.models.eval_modules import AISTEncoderBiGRUCo
+from core.models.loss import InfoNceLoss, CLIPLoss
 from core.datasets.evaluator_dataset import EvaluatorMotionDataset, EvaluatorVarLenMotionDataset,EvaluatorMotionCollator
 
 def exists(val):
@@ -78,8 +69,8 @@ def has_duplicates(tup):
 class AISTExtractorMotionTrainer(nn.Module):
 	def __init__(
 		self,
-		motion_extractor: MotionEncoderBiGRUCo,
-		music_extractor : MotionEncoderBiGRUCo,
+		motion_extractor: AISTEncoderBiGRUCo,
+		music_extractor : AISTEncoderBiGRUCo,
 		args,
 		training_args,
 		dataset_args,
@@ -130,7 +121,7 @@ class AISTExtractorMotionTrainer(nn.Module):
 		
 		self.grad_accum_every = self.training_args.gradient_accumulation_steps
 
-		self.loss_fnc = ContrastiveLoss()
+		self.loss_fnc = InfoNceLoss(temperature=args.temparature)
 
 		self.optim_motion = get_optimizer(self.motion_extractor.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
 		self.optim_music = get_optimizer(self.music_extractor.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
@@ -155,14 +146,14 @@ class AISTExtractorMotionTrainer(nn.Module):
 
 		if self.enable_var_len:
 			train_ds = EvaluatorVarLenMotionDataset(split = "train", data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			valid_ds = EvaluatorVarLenMotionDataset(split = "val",data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			self.render_ds = EvaluatorVarLenMotionDataset(split = "render",data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			valid_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "val",window_size=self.args.window_size, init_0 = True)
+			self.render_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "render" ,window_size=self.args.window_size)
 
 		else:
 
 			train_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder,split = "train", window_size=self.args.window_size)
-			valid_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "val",window_size=self.args.window_size,init_0 = True)
-			self.render_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "render" ,window_size=self.args.window_size, init_0 = True)
+			valid_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "val",window_size=self.args.window_size)
+			self.render_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "render" ,window_size=self.args.window_size)
 
 		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
@@ -333,18 +324,9 @@ class AISTExtractorMotionTrainer(nn.Module):
 			motion_encodings = self.motion_extractor(motion*motion_mask, motion_lengths)
 			music_encodings = self.music_extractor(condition *condition_mask ,motion_lengths)
    
-			batch_size = motion_encodings.shape[0]
-			'''Positive pairs'''
-			pos_labels = torch.zeros(batch_size)
-			loss_pos = self.loss_fnc(music_encodings, motion_encodings, pos_labels)
-
-			'''Negative Pairs, shifting index'''
-			neg_labels = torch.ones(batch_size)
-			shift = np.random.randint(0, batch_size-1)
-			new_idx = np.arange(shift, batch_size + shift) % batch_size
-			mis_motion_embedding = motion_encodings.clone()[new_idx]
-			loss_neg = self.loss_fnc(music_encodings, mis_motion_embedding, neg_labels)
-			loss = loss_pos + loss_neg
+			loss = self.loss_fnc(motion_encodings , music_encodings)
+   
+		
    
 
 			self.accelerator.backward(loss / self.grad_accum_every)
@@ -435,18 +417,7 @@ class AISTExtractorMotionTrainer(nn.Module):
 				motion_encodings = self.motion_extractor(motion*motion_mask, motion_lengths)
 				music_encodings = self.music_extractor(condition *condition_mask ,motion_lengths)
 	
-				batch_size = motion_encodings.shape[0]
-				'''Positive pairs'''
-				pos_labels = torch.zeros(batch_size)
-				loss_pos = self.loss_fnc(music_encodings, motion_encodings, pos_labels)
-
-				'''Negative Pairs, shifting index'''
-				neg_labels = torch.ones(batch_size)
-				shift = np.random.randint(0, batch_size-1)
-				new_idx = np.arange(shift, batch_size + shift) % batch_size
-				mis_motion_embedding = motion_encodings.clone()[new_idx]
-				loss_neg = self.loss_fnc(music_encodings, mis_motion_embedding, neg_labels)
-				loss = loss_pos + loss_neg
+				loss = self.loss_fnc(motion_encodings , music_encodings)
 
 				loss_dict = {
 				"total_loss": loss,

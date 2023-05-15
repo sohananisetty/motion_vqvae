@@ -45,19 +45,67 @@ class ReConsLoss(nn.Module):
     
     
     
-class ContrastiveLoss(torch.nn.Module):
-    """
-    Contrastive loss function.
-    Based on: http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
-    """
-    def __init__(self, margin=10.0):
-        super(ContrastiveLoss, self).__init__()
-        self.margin = margin
+class InfoNceLoss(nn.Module):
+    def __init__(self, temperature=0.5):
+        super().__init__()
+        self.register_buffer("temperature", torch.tensor(temperature))
+            
+    def forward(self, z_i, z_j):
+        """
+        emb_i and emb_j are batches of embeddings, where corresponding indices are pairs
+        z_i, z_j as per SimCLR paper
+        """
+        batch_size = z_i.shape[0]
+        # z_i = F.normalize(emb_i, dim=1)
+        # z_j = F.normalize(emb_j, dim=1)
 
-    def forward(self, output1, output2, label):
+        representations = torch.cat([z_i, z_j], dim=0)
+        similarity_matrix = F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=2)
         
-        euclidean_distance = F.pairwise_distance(output1, output2, keepdim=True)
-  
-        loss_contrastive = torch.mean((1-label) * torch.pow(euclidean_distance, 2) +
-                                      (label) * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
-        return loss_contrastive
+        sim_ij = torch.diag(similarity_matrix, batch_size)
+        sim_ji = torch.diag(similarity_matrix, -batch_size)
+        positives = torch.cat([sim_ij, sim_ji], dim=0)
+        
+        negatives_mask = (~torch.eye(batch_size * 2, batch_size * 2, dtype=bool)).float()
+        
+        nominator = torch.exp(positives / self.temperature)
+        denominator = negatives_mask * torch.exp(similarity_matrix / self.temperature)
+    
+        loss_partial = -torch.log(nominator / torch.sum(denominator, dim=1))
+        loss = torch.sum(loss_partial) / (2 * batch_size)
+        return loss
+    
+    
+class CLIPLoss(nn.Module):
+    def __init__(self, temperature=1.0):
+        super().__init__()
+        self.register_buffer("temperature", torch.tensor(temperature))
+        
+    def cross_entropy(self,preds, targets, reduction='none'):
+        log_softmax = nn.LogSoftmax(dim=-1)
+        loss = (-targets * log_softmax(preds)).sum(1)
+        if reduction == "none":
+            return loss
+        elif reduction == "mean":
+            return loss.mean()
+            
+    def forward(self,  z_i, z_j):
+        """
+        emb_i and emb_j are batches of embeddings, where corresponding indices are pairs
+        z_i, z_j as per SimCLR paper
+        """
+        # z_i = F.normalize(emb_i, dim=1)
+        # z_j = F.normalize(emb_j, dim=1)
+        
+        logits = (z_i @ z_j.T) / self.temperature
+        images_similarity = z_j @ z_j.T
+        texts_similarity = z_i @ z_i.T
+        targets = F.softmax(
+            (images_similarity + texts_similarity) / 2 * self.temperature, dim=-1
+        )
+        texts_loss = self.cross_entropy(logits, targets, reduction='none')
+        images_loss = self.cross_entropy(logits.T, targets.T, reduction='none')
+        loss =  (images_loss + texts_loss) / 2.0 # shape: (batch_size)
+        return loss.mean()
+
+        

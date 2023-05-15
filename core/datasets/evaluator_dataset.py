@@ -196,6 +196,7 @@ class EvaluatorMotionDataset(data.Dataset):
         self.window_size = window_size
 
         self.split = split
+        self.init_0 = init_0
        
 
         self.data_root = data_root

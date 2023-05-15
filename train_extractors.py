@@ -7,12 +7,12 @@ from pathlib import Path
 
 from ctl.trainer_extractors import AISTExtractorMotionTrainer
 from configs.config import cfg, get_cfg_defaults
-from core.models.eval_modules import MotionEncoderBiGRUCo
+from core.models.eval_modules import AISTEncoderBiGRUCo
 
 def main():
     
-    motion_extractor = MotionEncoderBiGRUCo(cfg.extractor.motion_input_size,cfg.extractor.hidden_size,cfg.extractor.output_size)
-    music_extractor =  MotionEncoderBiGRUCo(cfg.extractor.music_input_size,cfg.extractor.hidden_size,cfg.extractor.output_size)
+    motion_extractor = AISTEncoderBiGRUCo(cfg.extractor.motion_input_size,cfg.extractor.hidden_size,cfg.extractor.output_size)
+    music_extractor =  AISTEncoderBiGRUCo(cfg.extractor.music_input_size,cfg.extractor.hidden_size,cfg.extractor.output_size)
     
 
     trainer = AISTExtractorMotionTrainer(
