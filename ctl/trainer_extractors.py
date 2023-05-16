@@ -27,6 +27,8 @@ from collections import Counter
 
 from core.models.eval_modules import AISTEncoderBiGRUCo
 from core.models.loss import InfoNceLoss, CLIPLoss
+from info_nce import InfoNCE
+
 from core.datasets.evaluator_dataset import EvaluatorMotionDataset, EvaluatorVarLenMotionDataset,EvaluatorMotionCollator
 
 def exists(val):
@@ -121,37 +123,37 @@ class AISTExtractorMotionTrainer(nn.Module):
 		
 		self.grad_accum_every = self.training_args.gradient_accumulation_steps
 
-		self.loss_fnc = InfoNceLoss(temperature=args.temparature)
+		self.loss_fnc = InfoNCE()
 
 		self.optim_motion = get_optimizer(self.motion_extractor.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
 		self.optim_music = get_optimizer(self.music_extractor.parameters(), lr = self.training_args.learning_rate, wd = self.training_args.weight_decay)
 
-		self.lr_scheduler_motion = get_scheduler(
-			name = self.training_args.lr_scheduler_type,
-			optimizer=self.optim_motion,
-			num_warmup_steps=self.training_args.warmup_steps,
-			num_training_steps=self.num_train_steps,
-		)
+		# self.lr_scheduler_motion = get_scheduler(
+		# 	name = self.training_args.lr_scheduler_type,
+		# 	optimizer=self.optim_motion,
+		# 	num_warmup_steps=self.training_args.warmup_steps,
+		# 	num_training_steps=self.num_train_steps,
+		# )
   
-		self.lr_scheduler_music = get_scheduler(
-			name = self.training_args.lr_scheduler_type,
-			optimizer=self.optim_music,
-			num_warmup_steps=self.training_args.warmup_steps,
-			num_training_steps=self.num_train_steps,
-		)
+		# self.lr_scheduler_music = get_scheduler(
+		# 	name = self.training_args.lr_scheduler_type,
+		# 	optimizer=self.optim_music,
+		# 	num_warmup_steps=self.training_args.warmup_steps,
+		# 	num_training_steps=self.num_train_steps,
+		# )
 
 
 		self.max_grad_norm = max_grad_norm
 
 
 		if self.enable_var_len:
-			train_ds = EvaluatorVarLenMotionDataset(split = "train", data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			train_ds = EvaluatorVarLenMotionDataset(split = "all", data_root = self.dataset_args.data_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 			valid_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "val",window_size=self.args.window_size, init_0 = True)
 			self.render_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "render" ,window_size=self.args.window_size)
 
 		else:
 
-			train_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder,split = "train", window_size=self.args.window_size)
+			train_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder,split = "all", window_size=self.args.window_size)
 			valid_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "val",window_size=self.args.window_size)
 			self.render_ds = EvaluatorMotionDataset(data_root = self.dataset_args.data_folder , split = "render" ,window_size=self.args.window_size)
 
@@ -188,8 +190,8 @@ class AISTExtractorMotionTrainer(nn.Module):
 			self.render_dl
 		)
 
-		self.accelerator.register_for_checkpointing(self.lr_scheduler_motion)
-		self.accelerator.register_for_checkpointing(self.lr_scheduler_music)
+		# self.accelerator.register_for_checkpointing(self.lr_scheduler_motion)
+		# self.accelerator.register_for_checkpointing(self.lr_scheduler_music)
 
 		self.dl_iter = cycle(self.dl)
 		self.valid_dl_iter = cycle(self.valid_dl)
@@ -203,11 +205,11 @@ class AISTExtractorMotionTrainer(nn.Module):
 
 
 
-		self.best_fid_k = float("inf")
-		self.best_fid_g = float("inf")
-		self.best_div_k = float("-inf")
-		self.best_div_g= float("-inf")
-		self.best_beat_align= float("-inf")
+		# self.best_fid_k = float("inf")
+		# self.best_fid_g = float("inf")
+		# self.best_div_k = float("-inf")
+		# self.best_div_g= float("-inf")
+		# self.best_beat_align= float("-inf")
 
 
 
@@ -343,14 +345,14 @@ class AISTExtractorMotionTrainer(nn.Module):
 		self.optim_motion.step()
 		self.optim_music.step()
   
-		self.lr_scheduler_motion.step()
-		self.lr_scheduler_music.step()
+		# self.lr_scheduler_motion.step()
+		# self.lr_scheduler_music.step()
 		self.optim_motion.zero_grad()
 		self.optim_music.zero_grad()
 
 
 
-		losses_str = f"{steps}: regressor model total loss: {logs['loss'].float():.3}, average max length: {logs['avg_max_length']}"
+		losses_str = f"{steps}: extractor model total loss: {logs['loss'].float():.3}, average max length: {logs['avg_max_length']}"
 
 		if log_losses:
 			self.accelerator.log({
@@ -382,16 +384,7 @@ class AISTExtractorMotionTrainer(nn.Module):
 		if self.is_main and (steps % self.evaluate_every == 0):
 			print(f"validation start")
 			self.validation_step()
-			# print("calculating metrics")
-			# self.calculate_metrics(logs['loss'])
-			# print("rendering pred outputs")
-			# self.sample_render(os.path.join(self.output_dir , "samples"))
-			# print("test generating from <bos>")
-			# self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=400, num_start_indices  =1)
-
-		# self.accelerator.wait_for_everyone()
-				
-		# save model
+		
 		
 		
 		self.steps += 1

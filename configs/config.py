@@ -141,6 +141,7 @@ cfg.extractor.max_length_seconds = 30
 cfg.extractor.min_length_seconds = 3
 cfg.extractor.max_seq_length = cfg.extractor.max_length_seconds*cfg.dataset.fps
 cfg.extractor.temperature = 1.0
+cfg.extractor.checkpoint_dir = "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/extractors/checkpoints/"
 
 
 def get_cfg_defaults():

@@ -9,8 +9,12 @@ from utils.aist_metrics.calculate_fid_scores import calculate_avg_distance, extr
 from utils.aist_metrics.features import kinetic,manual
 from utils.aist_metrics.calculate_beat_scores import motion_peak_onehot,alignment_score
 
+from utils.eval_trans import calculate_R_precision, calculate_diversity, calculate_multimodality, calculate_top_k, calculate_frechet_distance
+
+
 import clip
 import random
+
 
 genre_dict = {
 	"mBR" : "Break",
@@ -547,7 +551,7 @@ def evaluate_music_motion_generative_style2(
 	beat_scores_pred = []
 
 	for i,aist_batch in enumerate(tqdm(val_loader)):
-     
+	 
 		if len(real_features["kinetic"]) > 40:
 			
 			break
@@ -856,14 +860,14 @@ def evaluate_music_motion_generative_parts(
 		context_mask=torch.ones((1 ,music_encoding.shape[0]) , dtype = torch.bool).cuda()
 		# print(gen_motion_indices.shape)
 		while gen_motion_indices.shape[1]<=seq_len:
-      
+	  
 			# start_tokens = gen_motion_indices[:,-1]
 
-      
+	  
 			# context_part = context[]
-      
+	  
 			
-      
+	  
 			
 			
 			try:
@@ -954,10 +958,6 @@ def evaluate_music_motion_generative_parts(
 	return best_fid_k, best_fid_g,best_div_k,best_div_g,best_beat_align , np.mean(real_pfc), np.mean(pred_pfc)
 		
 	 
-  
-  
-  
-  
 def calc_physical_score(joint3d):
 	
 	# print(joint3d.shape)
@@ -1000,7 +1000,281 @@ def calc_physical_score(joint3d):
 
 	
  
+
+@torch.no_grad()        
+def evaluate_music_motion_generative_extractors(
+	val_loader, vqvae_model,net,eval_wrapper , use35 = False,audio_feature_dir = "/srv/scratch/sanisetty3/music_motion/AIST/audio_features", audio_encoding_dir = "/srv/scratch/sanisetty3/music_motion/AIST/music",
+	best_fid_k=1000,best_fid_g=1000,
+	best_div_k=-100, best_div_g=-100,
+	best_beat_align=-100, seq_len=200 ):
+
+
  
+	motion_annotation_list = []
+	motion_pred_list = []
  
-#  out = np.mean(scores) * 10000
-# 	print(f"{dir} has a mean PFC of {out}")
+	music_annotation_list = []
+	music_pred_list = []
+
+	R_precision_real = 0
+	R_precision = 0
+ 
+	nb_sample = 0
+ 
+	audio_dir = audio_feature_dir if use35 else audio_encoding_dir
+ 
+	matching_score_real = 0
+	matching_score_pred = 0
+
+	for i,aist_batch in enumerate(tqdm(val_loader)):
+     
+		mot_len = int(aist_batch["motion_lengths"][0])
+		# print(mot_len)
+		motion_name = aist_batch["names"][0]
+     
+		# if len(music_annotation_list)>40:
+		# 	break
+
+		# if mot_len < seq_len:
+		# 	continue
+	 
+		
+		
+
+		
+  
+		bs, seq = aist_batch["motion"].shape[0], aist_batch["motion"].shape[1]
+  
+		music_name = motion_name.split('_')[-2]
+		music_encoding=  np.load(os.path.join(audio_dir , music_name + ".npy"))
+  
+		gen_motion_indices = torch.randint(0 , 1024 , (1,1))
+		# print(gen_motion_indices.shape)
+  
+		min_seq_len = min(mot_len , seq_len)
+  
+  
+		et, em = eval_wrapper.get_co_embeddings(music = aist_batch["condition"][:int(min_seq_len)] , \
+                                          		motions = aist_batch["motion"][:int(min_seq_len)], \
+												m_lens = torch.Tensor([min_seq_len]))
+  
+		# et, em = eval_wrapper.get_co_embeddings(music = aist_batch["condition"] , \
+        #                                   		motions = aist_batch["motion"], \
+		# 										m_lens = torch.Tensor([seq_len]))
+  
+		while gen_motion_indices.shape[1]<=min_seq_len:
+			
+			try:
+				gen_motion_indices = net.module.generate(start_tokens =gen_motion_indices.cuda(),\
+												seq_len=min_seq_len , \
+												context = aist_batch["condition"].cuda(), \
+												context_mask=torch.ones((1 ,aist_batch["condition"].shape[0]) , dtype = torch.bool).cuda()
+												)
+			except:
+				gen_motion_indices = net.generate(start_tokens =gen_motion_indices.cuda(),\
+														seq_len=min_seq_len , \
+														context = aist_batch["condition"].cuda(), \
+														context_mask=torch.ones((1 ,aist_batch["condition"].shape[0]) , dtype = torch.bool).cuda()
+														)
+	
+
+			
+			gen_motion_indices = gen_motion_indices[gen_motion_indices<1024][None,...]
+   
+
+   
+		try:
+			out_motion = torch.zeros((aist_batch["motion"].shape[0] ,gen_motion_indices.shape[-1] , aist_batch["motion"].shape[-1]))
+			for i in range(0 , seq_len, 200):
+				quant , out_motion_= vqvae_model.module.decode(gen_motion_indices[:,i:i+200])
+				out_motion[:,i:i+200] = out_motion_
+
+		except:
+			out_motion = torch.zeros((aist_batch["motion"].shape[0] ,gen_motion_indices.shape[-1] , aist_batch["motion"].shape[-1]))
+			for i in range(0 , seq_len, 200):
+				quant , out_motion_= vqvae_model.decode(gen_motion_indices[:,i:i+200])
+				out_motion[:,i:i+200] = out_motion_
+	
+	
+		et_pred, em_pred = eval_wrapper.get_co_embeddings(
+													music = aist_batch["condition"][:int(min_seq_len)]  , \
+													motions = out_motion[:,1:int(min_seq_len) + 1], \
+													m_lens = torch.Tensor([min_seq_len]))
+  
+		# et_pred, em_pred = eval_wrapper.get_co_embeddings(music = aist_batch["condition"] , \
+        #                                   		motions =out_motion[:,1:int(seq_len) + 1], \
+		# 										m_lens = torch.Tensor([seq_len]*bs))
+  
+  
+		motion_pred_list.append(em_pred)
+		motion_annotation_list.append(em)
+  
+		music_pred_list.append(et_pred)
+		music_annotation_list.append(et)
+  
+		
+  
+		nb_sample += bs
+  
+	print(nb_sample)
+  
+  
+	motion_annotation_np = torch.cat(motion_annotation_list, dim=0).cpu().numpy()
+	motion_pred_np = torch.cat(motion_pred_list, dim=0).cpu().numpy()
+ 
+	music_annotation_np = torch.cat(music_annotation_list, dim=0).cpu().numpy()
+	music_pred_np = torch.cat(music_pred_list, dim=0).cpu().numpy()
+ 
+	gt_mu, gt_cov  = calculate_activation_statistics(motion_annotation_np)
+	mu, cov= calculate_activation_statistics(motion_pred_np)
+ 
+	fid = calculate_frechet_distance(gt_mu, gt_cov, mu, cov)
+ 
+
+ 
+
+	diversity_real = calculate_diversity(motion_annotation_np, 100 if nb_sample > 100 else 30)
+	diversity = calculate_diversity(motion_pred_np, 100 if nb_sample > 100 else 30)
+	
+	temp_R, temp_match = calculate_R_precision(music_annotation_np, motion_annotation_np, top_k=3, sum_all=True)
+	temp_R_pred, temp_match_pred = calculate_R_precision(music_pred_np, motion_pred_np, top_k=3, sum_all=True)
+ 
+	print(temp_match , temp_match_pred)
+ 
+	R_precision_real = temp_R / nb_sample
+	R_precision = temp_R_pred / nb_sample
+
+	matching_score_real = temp_match / nb_sample
+	matching_score_pred = temp_match_pred / nb_sample
+
+
+	msg = f"--> \t :, FID. {fid:.4f}, Diversity Real. {diversity_real:.4f}, Diversity. {diversity:.4f}, R_precision_real. {R_precision_real}, R_precision. {R_precision}, matching_score_real. {matching_score_real}, matching_score_pred. {matching_score_pred}"
+	print(msg)
+ 
+	return fid, diversity_real, diversity
+	
+	
+
+
+
+# @torch.no_grad()        
+# def evaluate_music_motion_generative_extractors2(
+# 	val_loader, vqvae_model,net,eval_wrapper , use35 = False,audio_feature_dir = "/srv/scratch/sanisetty3/music_motion/AIST/audio_features", audio_encoding_dir = "/srv/scratch/sanisetty3/music_motion/AIST/music",
+# 	best_fid_k=1000,best_fid_g=1000,
+# 	best_div_k=-100, best_div_g=-100,
+# 	best_beat_align=-100, seq_len=200 ):
+
+# 	motion_annotation_list = []
+# 	motion_pred_list = []
+
+# 	music_annotation_list = []
+# 	music_pred_list = []
+
+# 	R_precision_real = 0
+# 	R_precision = 0
+
+# 	nb_sample = 0
+
+# 	audio_dir = "/srv/scratch/sanisetty3/music_motion/AIST/music"
+
+# 	matching_score_real = 0
+# 	matching_score_pred = 0
+# 	motion_extractor = motion_extractor.cuda()
+# 	music_extractor = music_extractor.cuda()
+
+# 	for j,aist_batch in enumerate(tqdm(val_loader)):
+		
+# 	#     if j>3:
+# 	#         break
+		
+# 		bs, seq = aist_batch["motion"].shape[0], aist_batch["motion"].shape[1]
+		
+# 		em = motion_extractor(aist_batch["motion"].cuda(), aist_batch["motion_lengths"].cuda())
+# 		et = music_extractor(aist_batch["condition"].cuda(),aist_batch["motion_lengths"].cuda())
+		
+# 		# et, em = eval_wrapper.get_co_embeddings(music = aist_batch["condition"][:int(min_seq_len)] , \
+#         #                                   		motions = aist_batch["motion"][:int(min_seq_len)], \
+# 		# 										m_lens = torch.Tensor([min_seq_len]))
+  
+# 		generated_motion = torch.zeros(aist_batch["motion"].shape).cuda()
+		
+# 		for i in range(bs):
+			
+# 			mot_len = int(aist_batch["motion_lengths"][i])
+# 			motion_name = aist_batch["names"][i]
+
+# 			music_name = motion_name.split('_')[-2]
+# 			music_encoding=  np.load(os.path.join(audio_dir , music_name + ".npy"))
+
+# 			music_name = motion_name.split('_')[-2]
+# 			gen_motion_indices = torch.randint(0 , 1024 , (1,1))
+
+# 			gen_motion_indices = net.generate(start_tokens =gen_motion_indices.cuda(),\
+# 														seq_len=mot_len , \
+# 														context = torch.Tensor(music_encoding)[None,...].cuda(), \
+# 														context_mask=torch.ones((1 ,music_encoding.shape[0]) , dtype = torch.bool).cuda()
+# 														)
+
+
+# 			out_motion = torch.zeros((1, gen_motion_indices.shape[-1] , aist_batch["motion"].shape[-1]))
+# 			for j in range(0 , mot_len, 200):
+# 				quant , out_motion_= vqvae_model.decode(gen_motion_indices[:,j:j+200])
+# 				out_motion[:,j:j+200] = out_motion_
+				
+# 			generated_motion[i:i+1,:mot_len,:] = out_motion[:,1:,:]
+			
+# 	#         print(out_motion.shape)
+			
+
+# 		em_pred = motion_extractor(generated_motion.cuda(), aist_batch["motion_lengths"].cuda())
+# 		et_pred = music_extractor(aist_batch["condition"].cuda(),aist_batch["motion_lengths"].cuda())
+		
+
+
+# 		motion_pred_list.append(em_pred)
+# 		motion_annotation_list.append(em)
+
+# 		music_pred_list.append(et_pred)
+# 		music_annotation_list.append(et)
+		
+		
+# 		temp_R, temp_match = calculate_R_precision(et.detach().cpu().numpy(), em.detach().cpu().numpy(), top_k=3, sum_all=True)
+# 		R_precision_real += temp_R
+# 		matching_score_real += temp_match
+
+# 		temp_R_pred, temp_match_pred = calculate_R_precision(et_pred.detach().cpu().numpy(), em_pred.detach().cpu().numpy(), top_k=3, sum_all=True)
+# 		R_precision += temp_R_pred
+# 		matching_score_pred += temp_match_pred
+		
+		
+
+
+
+# 		nb_sample += bs
+		
+# 	motion_annotation_np = torch.cat(motion_annotation_list, dim=0).detach().cpu().numpy()
+# 	motion_pred_np = torch.cat(motion_pred_list, dim=0).detach().cpu().numpy()
+
+# 	music_annotation_np = torch.cat(music_annotation_list, dim=0).detach().cpu().numpy()
+# 	music_pred_np = torch.cat(music_pred_list, dim=0).detach().cpu().numpy()
+
+# 	gt_mu, gt_cov  = calculate_activation_statistics(motion_annotation_np)
+# 	mu, cov= calculate_activation_statistics(motion_pred_np)
+# 	fid = calculate_frechet_distance(gt_mu, gt_cov, mu, cov)
+# 	print("fid ", fid)
+
+# 	diversity_real = calculate_diversity(motion_annotation_np, 100 if nb_sample > 100 else 10)
+# 	diversity = calculate_diversity(motion_pred_np, 100 if nb_sample > 100 else 10)
+# 	print(diversity_real , diversity)
+
+
+
+
+	
+
+def calculate_activation_statistics(activations):
+
+	mu = np.mean(activations, axis=0)
+	cov = np.cov(activations, rowvar=False)
+	return mu, cov
+

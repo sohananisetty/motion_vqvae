@@ -196,31 +196,25 @@ def saveSMPL(motions, outdir='test_vis', step=None, name=None, pred=True):
 
     faces = rot2xyz.smpl_model.faces
 
-           
-    fl1 = os.path.exists(os.path.join(outdir , name+'_pred.pt')) and pred
-    fl2 = os.path.exists(os.path.join(outdir , name+'_gt.pt')) and not pred
+    print(f'Running SMPLify, it may take a few minutes.')
+    motion_tensor, opt_dict = j2s.joint2smpl(motions)  # [nframes, njoints, 3]
 
-    if fl1 == False and fl2 == False:
-    #(not os.path.exists(os.path.join(outdir , name+'_pred.pt')) and pred) or (not os.path.exists(outdir + name+'_gt.pt') and not pred): 
-        print(f'Running SMPLify, it may take a few minutes.')
-        motion_tensor, opt_dict = j2s.joint2smpl(motions)  # [nframes, njoints, 3]
+    print(motion_tensor.shape , opt_dict.keys())
 
-        print(motion_tensor.shape , opt_dict.keys())
+    vertices, rotations, global_orient, out, x_translations = rot2xyz(torch.tensor(motion_tensor).clone(), mask=None,
+                                    pose_rep='rot6d', translation=True, glob=True, jointstype='vertices', vertstrans=True, get_rotations_back=True)
+    
+    output = dict(vertices = vertices,
+                  rotations = rotations,
+                  global_orient = global_orient,
+                  x_translations = x_translations,
+                  smpl_output = out )
 
-        vertices = rot2xyz(torch.tensor(motion_tensor).clone(), mask=None,
-                                        pose_rep='rot6d', translation=True, glob=True,
-                                        jointstype='vertices',
-                                        vertstrans=True)
-
-        if pred:
-            torch.save(vertices, os.path.join(outdir , name+'_pred.pt'))
-        else:
-            torch.save(vertices, os.path.join(outdir , name+'_gt.pt'))
+    if pred:
+        torch.save(output, os.path.join(outdir , name+'_pred.pt'))
     else:
-        if pred:
-            vertices = torch.load(os.path.join(outdir , name+'_pred.pt'))
-        else:
-            vertices = torch.load(os.path.join(outdir , name+'_gt.pt'))
+        torch.save(output, os.path.join(outdir , name+'_gt.pt'))
+ 
     frames = vertices.shape[3] # shape: 1, nb_frames, 3, nb_joints
     print (vertices.shape)
     

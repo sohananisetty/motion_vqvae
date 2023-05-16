@@ -4,6 +4,7 @@ from os.path import join as pjoin
 import numpy as np
 from core.models.eval_modules import MovementConvEncoder, TextEncoderBiGRUCo, MotionEncoderBiGRUCo
 from utils.word_vectorizer import POS_enumerator
+from core.models.eval_modules import AISTEncoderBiGRUCo
 
 def build_models(opt):
     movement_enc = MovementConvEncoder(opt.dim_pose-4, opt.dim_movement_enc_hidden, opt.dim_movement_latent)
@@ -90,3 +91,39 @@ class EvaluatorModelWrapper(object):
             m_lens = m_lens // self.opt.unit_length
             motion_embedding = self.motion_encoder(movements, m_lens)
         return motion_embedding
+
+
+
+class AISTEvaluatorModelWrapper(object):
+
+    def __init__(self, cfg):
+
+       
+        self.motion_extractor = AISTEncoderBiGRUCo(cfg.extractor.motion_input_size,cfg.extractor.hidden_size,cfg.extractor.output_size)
+        self.music_extractor =  AISTEncoderBiGRUCo(cfg.extractor.music_input_size,cfg.extractor.hidden_size,cfg.extractor.output_size)
+        self.opt = cfg
+
+        self.motion_extractor.to("cuda")
+        self.music_extractor.to("cuda")
+        
+        chk = torch.load(cfg.extractor.checkpoint_dir)
+        
+        print("loading from: ", cfg.extractor.checkpoint_dir, "steps: ", chk["steps"])
+        self.motion_extractor.load_state_dict(chk["motion_extractor"])
+        self.music_extractor.load_state_dict(chk["music_extractor"])
+        
+        
+
+        self.motion_extractor.eval()
+        self.music_extractor.eval()
+
+    # Please note that the results does not following the order of inputs
+    def get_co_embeddings(self, music, motions, m_lens):
+        with torch.no_grad():
+            
+            em = self.motion_extractor(motions.cuda(), m_lens)
+            ec = self.music_extractor(music.cuda() ,m_lens)
+
+        return ec, em
+
+   

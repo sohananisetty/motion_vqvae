@@ -66,7 +66,7 @@ class InfoNceLoss(nn.Module):
         sim_ji = torch.diag(similarity_matrix, -batch_size)
         positives = torch.cat([sim_ij, sim_ji], dim=0)
         
-        negatives_mask = (~torch.eye(batch_size * 2, batch_size * 2, dtype=bool)).float()
+        negatives_mask = (~torch.eye(batch_size * 2, batch_size * 2, dtype=bool , device=z_i.device)).float()
         
         nominator = torch.exp(positives / self.temperature)
         denominator = negatives_mask * torch.exp(similarity_matrix / self.temperature)

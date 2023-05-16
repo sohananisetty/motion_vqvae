@@ -87,6 +87,6 @@ class Rotation2xyz:
             x_xyz = x_xyz + x_translations[:, None, :, :]
 
         if get_rotations_back:
-            return x_xyz, rotations, global_orient
+            return x_xyz, rotations, global_orient, out, x_translations
         else:
             return x_xyz

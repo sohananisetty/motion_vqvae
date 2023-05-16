@@ -191,7 +191,7 @@ class EvaluatorVarLenMotionDataset(data.Dataset):
 
 
 class EvaluatorMotionDataset(data.Dataset):
-    def __init__(self, data_root, window_size = 60 , fps = 20, split = "train", init_0 = False):
+    def __init__(self, data_root, window_size = 60 , fps = 20, split = "train", init_0 = False, librosa = False):
         self.fps = fps
         self.window_size = window_size
 
@@ -201,7 +201,8 @@ class EvaluatorMotionDataset(data.Dataset):
 
         self.data_root = data_root
         self.motion_dir = os.path.join(self.data_root, 'new_joint_vecs')
-        self.music_dir =  os.path.join(self.data_root, "music")
+        
+        self.music_dir =  os.path.join(self.data_root, "music") if not librosa else os.path.join(self.data_root, "audio_features") 
         self.joints_num = 22
         self.meta_dir = ''
         self.condition = "music"        
@@ -270,6 +271,12 @@ class EvaluatorMotionDataset(data.Dataset):
         motion, motion_len, music = data['motion'], data['length'], data['music']
         condition = music
         
+        if self.window_size==-1:
+            motion = (motion - self.mean) / self.std
+
+            return motion , self.id_list[item], condition
+            
+        
         window_size = min(self.window_size , motion_len)
         
 
@@ -277,7 +284,7 @@ class EvaluatorMotionDataset(data.Dataset):
             idx = 0
         else:
             idx = random.randint(0, motion_len - window_size)
-
+           
         
         motion = motion[idx:idx+self.window_size]
         

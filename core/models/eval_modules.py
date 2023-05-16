@@ -149,7 +149,7 @@ class MotionEncoderBiGRUCo(nn.Module):
 
 class AISTEncoderBiGRUCo(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, device = "cuda"):
-        super(MotionEncoderBiGRUCo, self).__init__()
+        super(AISTEncoderBiGRUCo, self).__init__()
         self.device = device
 
         self.input_emb = nn.Linear(input_size, hidden_size)

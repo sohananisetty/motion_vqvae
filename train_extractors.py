@@ -42,8 +42,8 @@ if __name__ == '__main__':
     # print("output_dir: ", cfg.output_dir , cfg.train.output_dir)
 
     cfg = get_cfg_defaults()
-    print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/extractors/aist_extractor.yaml")
-    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/extractors/aist_extractor.yaml")
+    print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/extractors/small/aist_extractor.yaml")
+    cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/extractors/small/aist_extractor.yaml")
     cfg.freeze()
     print("output_dir: ", cfg.output_dir , cfg.train.output_dir)
     

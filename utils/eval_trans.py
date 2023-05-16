@@ -588,22 +588,40 @@ def evaluation_transformer_test(out_dir, val_loader, net, trans, logger, writer,
 	trans.train()
 	return fid, best_iter, diversity, R_precision[0], R_precision[1], R_precision[2], matching_score_pred, multimodality, writer, logger
 
-# (X - X_train)*(X - X_train) = -2X*X_train + X*X + X_train*X_train
-def euclidean_distance_matrix(matrix1, matrix2):
-	"""
-		Params:
-		-- matrix1: N1 x D
-		-- matrix2: N2 x D
-		Returns:
-		-- dist: N1 x N2
-		dist[i, j] == distance(matrix1[i], matrix2[j])
-	"""
-	assert matrix1.shape[1] == matrix2.shape[1]
-	d1 = -2 * np.dot(matrix1, matrix2.T)    # shape (num_test, num_train)
-	d2 = np.sum(np.square(matrix1), axis=1, keepdims=True)    # shape (num_test, 1)
-	d3 = np.sum(np.square(matrix2), axis=1)     # shape (num_train, )
-	dists = np.sqrt(d1 + d2 + d3)  # broadcasting
-	return dists
+# # (X - X_train)*(X - X_train) = -2X*X_train + X*X + X_train*X_train
+# def euclidean_distance_matrix(matrix1, matrix2):
+# 	"""
+# 		Params:
+# 		-- matrix1: N1 x D
+# 		-- matrix2: N2 x D
+# 		Returns:
+# 		-- dist: N1 x N2
+# 		dist[i, j] == distance(matrix1[i], matrix2[j])
+# 	"""
+# 	assert matrix1.shape[1] == matrix2.shape[1]
+# 	d1 = -2 * np.dot(matrix1, matrix2.T)    # shape (num_test, num_train)
+# 	d2 = np.sum(np.square(matrix1), axis=1, keepdims=True)    # shape (num_test, 1)
+# 	d3 = np.sum(np.square(matrix2), axis=1)     # shape (num_train, )
+# 	dists = np.sqrt(d1 + d2 + d3)  # broadcasting
+# 	return dists
+def euclidean_distance_matrix(X, Y):
+    """Efficiently calculates the euclidean distance
+    between two vectors using Numpys einsum function.
+
+    Parameters
+    ----------
+    X : array, (n_samples x d_dimensions)
+    Y : array, (n_samples x d_dimensions)
+
+    Returns
+    -------
+    D : array, (n_samples, n_samples)
+    """
+    XX = np.einsum('ij,ij->i', X, X)[:, np.newaxis]
+    YY = np.einsum('ij,ij->i', Y, Y)
+#    XY = 2 * np.einsum('ij,kj->ik', X, Y)
+    XY = 2 * np.dot(X, Y.T)
+    return  XX + YY - XY
 
 
 

@@ -46,8 +46,8 @@ if __name__ == '__main__':
 
 
     cfg = get_cfg_defaults()
-    print("loading config from:" , encodec_cfg_path)
-    cfg.merge_from_file(encodec_cfg_path)
+    print("loading config from:" , encodec_sine_cfg_path)
+    cfg.merge_from_file(encodec_sine_cfg_path)
     cfg.freeze()
     print("\n cfg: \n", cfg)
     
