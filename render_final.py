@@ -218,6 +218,40 @@ def saveSMPL(motions, outdir='test_vis', step=None, name=None, pred=True):
     frames = vertices.shape[3] # shape: 1, nb_frames, 3, nb_joints
     print (vertices.shape)
     
+    
+
+def hml2aist(motions):
+    frames, njoints, nfeats = motions.shape
+    MINS = motions.min(axis=0).min(axis=0)
+    MAXS = motions.max(axis=0).max(axis=0)
+
+    height_offset = MINS[1]
+    motions[:, :, 1] -= height_offset
+    trajec = motions[:, 0, [0, 2]]
+
+    j2s = joints2smpl(num_frames=frames, device_id=0, cuda=True)
+    # rot2xyz = Rotation2xyz(device=torch.device("cuda:0"))
+    rot2xyz = Rotation2xyz(device=torch.device("cuda"))
+
+    faces = rot2xyz.smpl_model.faces
+
+    print(f'Running SMPLify, it may take a few minutes.')
+    motion_tensor, opt_dict = j2s.joint2smpl(motions)  # [nframes, njoints, 3]
+
+    # print(motion_tensor.shape , opt_dict.keys())
+
+    vertices, rotations, global_orient, out, x_translations = rot2xyz(torch.tensor(motion_tensor).clone(), mask=None,
+                                    pose_rep='rot6d', translation=True, glob=True, jointstype='vertices', vertstrans=True, get_rotations_back=True)
+    
+    print(global_orient.shape, rotations.shape, x_translations.shape)
+    
+    rots = np.concatenate((global_orient[:,None,:,:].detach().cpu().numpy() ,rotations.detach().cpu().numpy() ) , axis = 1).reshape(rotations.shape[0] , -1)
+    trans = x_translations[0].cpu().numpy().T
+
+    aist = np.concatenate((np.zeros((trans.shape[0] , 6)) , trans , rots) , axis = 1)
+    
+ 
+    return aist
 
 
 

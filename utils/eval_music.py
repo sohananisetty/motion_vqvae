@@ -298,6 +298,8 @@ def evaluate_music_motion_generative(
 	real_pfc = []
 	pred_pfc = []
  
+	gen_motions = []
+ 
 	audio_dir = audio_feature_dir if use35 else audio_encoding_dir
 
 	for i,aist_batch in enumerate(tqdm(val_loader)):
@@ -306,29 +308,38 @@ def evaluate_music_motion_generative(
 		mot_len = aist_batch["motion_lengths"][0]
 		motion_name = aist_batch["names"][0]
   
+		
+  
 		music_name = motion_name.split('_')[-2]
 		music_encoding=  np.load(os.path.join(audio_dir , music_name + ".npy"))
   
 		gen_motion_indices = torch.randint(0 , 1024 , (1,1))
 		# print(gen_motion_indices.shape)
-		while gen_motion_indices.shape[1]<=seq_len:
+		while gen_motion_indices.shape[1]<mot_len:
 			
 			try:
 				gen_motion_indices = net.module.generate(start_tokens =gen_motion_indices.cuda(),\
-												seq_len=seq_len , \
+												seq_len=mot_len , \
 												context = torch.Tensor(music_encoding)[None,...].cuda(), \
 												context_mask=torch.ones((1 ,music_encoding.shape[0]) , dtype = torch.bool).cuda()
 												)
 			except:
 				gen_motion_indices = net.generate(start_tokens =gen_motion_indices.cuda(),\
-														seq_len=seq_len , \
+														seq_len=mot_len , \
 														context = torch.Tensor(music_encoding)[None,...].cuda(), \
 														context_mask=torch.ones((1 ,music_encoding.shape[0]) , dtype = torch.bool).cuda()
 														)
+    
+			
 	
 
 			
 			gen_motion_indices = gen_motion_indices[gen_motion_indices<1024][None,...]
+			gen_motion_indices = gen_motion_indices[:,1:]
+   
+			# print(gen_motion_indices.shape)
+   
+
    
 
    
@@ -345,6 +356,10 @@ def evaluate_music_motion_generative(
 			for i in range(0 , seq_len, 200):
 				quant , out_motion_= vqvae_model.decode(gen_motion_indices[:,i:i+200])
 				out_motion[:,i:i+200] = out_motion_
+    
+		print(out_motion.shape)
+    
+		gen_motions.append((aist_batch["motion"] ,out_motion, motion_name))
 
 
 		keypoints3d_gt = recover_from_ric(aist_batch["motion"][0,:mot_len] , 22).detach().cpu().numpy()
@@ -401,7 +416,7 @@ def evaluate_music_motion_generative(
 
 
 
-	return best_fid_k, best_fid_g,best_div_k,best_div_g,best_beat_align
+	return gen_motions, best_fid_k, best_fid_g,best_div_k,best_div_g,best_beat_align
 		
 		
   
