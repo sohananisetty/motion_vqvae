@@ -36,12 +36,6 @@ if __name__ == '__main__':
 
    
 
-    # cfg = get_cfg_defaults()
-    # print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/configs/var_len_768_768_aist_vq.yaml")
-    # cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/configs/var_len_768_768_aist_vq.yaml")
-    # cfg.freeze()
-    # print("output_dir: ", cfg.output_dir , cfg.train.output_dir)
-
     cfg = get_cfg_defaults()
     print("loading config from:" , "/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_mix_albi/var_len_768_768_mix_albi.yaml")
     cfg.merge_from_file("/srv/scratch/sanisetty3/music_motion/motion_vqvae/checkpoints/var_len/vq_768_768_mix_albi/var_len_768_768_mix_albi.yaml")

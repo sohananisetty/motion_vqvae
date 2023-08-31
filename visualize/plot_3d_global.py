@@ -112,14 +112,14 @@ def plot_3d_motion(args, figsize=(10, 10), fps=120, radius=4):
     return torch.from_numpy(out)
 
 
-def draw_to_batch(smpl_joints_batch, title_batch=None, outname=None) : 
+def draw_to_batch(smpl_joints_batch, title_batch=None, outname=None , fps = 20) : 
     
     batch_size = len(smpl_joints_batch)
     out = []
     for i in range(batch_size) : 
         out.append(plot_3d_motion([smpl_joints_batch[i], None, title_batch[i] if title_batch is not None else None]))
         if outname is not None:
-            imageio.mimsave(outname[i], np.array(out[-1]), fps=20)
+            imageio.mimsave(outname[i], np.array(out[-1]), fps=fps)
     out = torch.stack(out, axis=0)
     return out
     

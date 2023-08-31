@@ -20,7 +20,8 @@ __pycache__/
 *.pkl
 *.wav
 *.flac
-
+*.mp3
+*.mp4
 # C extensions
 *.so
 

@@ -361,7 +361,7 @@ class VQFullMotionDataset(data.Dataset):
    
 
 class VQMotionDataset(data.Dataset):
-    def __init__(self, dataset_name, data_root, max_length_seconds = 10, window_size = 64, fps = 20, split = "train"):
+    def __init__(self, dataset_name, data_root, max_length_seconds = 10, window_size = 60, fps = 20, split = "train"):
         self.fps = fps
 
         self.max_length_seconds = max_length_seconds
@@ -380,7 +380,14 @@ class VQMotionDataset(data.Dataset):
         if dataset_name == 'aist':
             self.data_root = data_root
             self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
-            self. music_dir = pjoin(self.data_root, 'music')
+            self.music_dir = pjoin(self.data_root, 'music')
+            self.joints_num = 22
+            self.meta_dir = ''
+            
+        if dataset_name == 'choreomaster':
+            self.data_root = data_root
+            self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
+            self.music_dir = pjoin(self.data_root, 'music')
             self.joints_num = 22
             self.meta_dir = ''
 
@@ -409,8 +416,8 @@ class VQMotionDataset(data.Dataset):
         for name in tqdm(self.id_list):
             try:
                 motion = np.load(pjoin(self.motion_dir, name + '.npy'))
-                # if motion.shape[0] < self.window_size:
-                #     continue
+                if motion.shape[0] < self.window_size:
+                    continue
                 self.lengths.append(motion.shape[0] - self.window_size)
                 self.data.append(motion)
             except:
@@ -465,6 +472,13 @@ class VQVarLenMotionDataset(data.Dataset):
             self.data_root = data_root
             self.motion_dir = os.path.join(self.data_root, 'new_joint_vecs')
             self.text_dir = os.path.join(self.data_root, 'texts')
+            self.joints_num = 22
+            self.music_paths =  glob(os.path.join(self.data_root, 'music/*.npy'))
+            self.meta_dir = ''
+            
+        if dataset_name == 'choreomaster':
+            self.data_root = data_root
+            self.motion_dir = os.path.join(self.data_root, 'new_joint_vecs')
             self.joints_num = 22
             self.music_paths =  glob(os.path.join(self.data_root, 'music/*.npy'))
             self.meta_dir = ''

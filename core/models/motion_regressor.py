@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from math import ceil
-from core.models.attention import AttentionLayers, Decoder, StyleNorm,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, exists, default, always,l2norm
+from core.models.attention import AttentionLayers, Decoder,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, exists, default, always,l2norm
 from tqdm import tqdm
 
 

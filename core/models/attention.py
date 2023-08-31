@@ -1,3 +1,11 @@
+# This implementation is inspired from
+# https://github.com/lucidrains/x-transformers
+# which is released under MIT License. Hereafter, the original license:
+# MIT License
+
+
+
+
 import math
 from random import random
 
@@ -510,6 +518,10 @@ class Decoder(AttentionLayers):
         super().__init__(causal = True, **kwargs)
 
 
+class Encoder(AttentionLayers):
+    def __init__(self, **kwargs):
+        assert 'causal' not in kwargs, 'cannot set causality on encoder'
+        super().__init__(causal = False, **kwargs)
 
 
 

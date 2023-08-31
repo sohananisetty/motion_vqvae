@@ -1,10 +1,9 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from x_transformers.x_transformers import AttentionLayers, Encoder, Decoder, exists, default, always,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, l2norm
-from vector_quantize_pytorch import ResidualVQ, VectorQuantize
-from einops import rearrange, reduce, pack, unpack
+# from x_transformers.x_transformers import AttentionLayers, Encoder, Decoder, exists, default, always,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, l2norm
 from core.quantization.core_vq import VectorQuantization
+from core.models.attention import AttentionLayers, Decoder, Encoder,ScaledSinusoidalEmbedding,AbsolutePositionalEmbedding, exists, default, always,l2norm
 
 class LinearEmbedding(nn.Module):
 	def __init__(self, input_dim,dim, l2norm_embed = False):
@@ -322,9 +321,6 @@ class VQMotionModel(nn.Module):
 	# 		# x = rearrange(x, 'b n c -> b c n')
 	# 		return codes , self.motionDecoder(x)
 	
-	
- 
- 
 class VQMotionModelPositional(nn.Module):
 	"""Audio Motion VQGAN model."""
 

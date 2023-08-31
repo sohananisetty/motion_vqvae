@@ -487,7 +487,6 @@ def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
     b3 = torch.cross(b1, b2, dim=-1)
     return torch.stack((b1, b2, b3), dim=-2)
 
-
 def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
     """
     Converts rotation matrices to 6D rotation representation by Zhou et al. [1]
@@ -529,4 +528,21 @@ def canonicalize_smplh(poses, trans = None):
     else:
         return xc
     
-    
+
+def axis_angle_to_rotation_6d(axis_angle):
+    """
+    Converts axis angle to 6D rotation representation by Zhou et al. [1]
+    by dropping the last row. Note that 6D representation is not unique.
+    Args:
+        axis angle: Rotations given as a vector in axis angle form,
+            as a tensor of shape (..., 3), where the magnitude is
+            the angle turned anticlockwise in radians around the
+            vector's direction.
+    Returns:
+        6D rotation representation, of size (*, 6)
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+    return matrix_to_rotation_6d(axis_angle_to_matrix(axis_angle))

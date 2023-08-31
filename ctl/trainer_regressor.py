@@ -108,7 +108,7 @@ class RegressorMotionTrainer(nn.Module):
 
 		print("self.enable_var_len: ", self.enable_var_len)
 
-		self.stage_steps = list(np.linspace(0,280000, self.num_stages , dtype = np.uint))
+		self.stage_steps = list(np.linspace(0,self.num_train_steps, self.num_stages , dtype = np.uint))
 		print("stage_steps: " , self.stage_steps )
 		self.stage = 0
 
@@ -143,17 +143,17 @@ class RegressorMotionTrainer(nn.Module):
 		self.best_fid = float("-inf")
 
 		if self.enable_var_len:
-			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , datafolder="joint_indices", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
-			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices", musicfolder = self.dataset_args.music_folder, window_size = 400,force_len=True)
-			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices", musicfolder = self.dataset_args.music_folder,window_size=400, force_len=True)
+			train_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder , num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
+			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val",datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder, window_size = 400,force_len=True)
+			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=400, force_len=True)
 
 			# valid_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 			# self.render_ds = VQVarLenMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" ,datafolder="joint_indices_max_400", num_stages=self.num_stages ,min_length_seconds=self.args.min_length_seconds, max_length_seconds=self.args.max_length_seconds)
 		else:
 
-			train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", datafolder="joint_indices", musicfolder = self.dataset_args.music_folder  , window_size=self.args.window_size)
-			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", datafolder="joint_indices", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
-			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
+			train_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder,split = "train", datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder  , window_size=self.args.window_size)
+			valid_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "val", datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
+			self.render_ds = TransMotionDatasetConditional(self.dataset_args.dataset_name, data_root = self.dataset_args.data_folder , split = "render" , datafolder="joint_indices_max_400", musicfolder = self.dataset_args.music_folder,window_size=self.args.window_size)
 
 		self.print(f'training with training and valid dataset of {len(train_ds)} and  {len(valid_ds)} samples and test of  {len(self.render_ds)}')
 
@@ -389,8 +389,8 @@ class RegressorMotionTrainer(nn.Module):
 			self.calculate_metrics(logs['loss'])
 			print("rendering pred outputs")
 			self.sample_render(os.path.join(self.output_dir , "samples"))
-			# print("test generating from <bos>")
-			# self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=400, num_start_indices  =1)
+			print("test generating from <bos>")
+			self.sample_render_generative(os.path.join(self.output_dir , "generative") , seq_len=400, num_start_indices  =1)
 
 		# self.accelerator.wait_for_everyone()
 				
